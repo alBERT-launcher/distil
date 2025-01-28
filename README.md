@@ -2,6 +2,29 @@
 
 > Because life's too short to version prompts manually.
 
+## Zero Config, Just Drop It In 🎯
+
+```typescript
+// Before: Your regular OpenAI code
+import OpenAI from 'openai';
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// After: Just change the import, everything else works the same
+import { Distil } from 'distil';
+const openai = new Distil({ apiKey: process.env.OPENAI_API_KEY });
+
+// That's it! Use it exactly like before
+const response = await openai.createChatCompletion({
+  messages: [{ role: 'user', content: 'Write me a button' }]
+});
+
+// Behind the scenes, Distil is:
+// - Versioning your prompts
+// - Building fine-tuning datasets
+// - Tracking costs and performance
+// - Making you look smart
+```
+
 Are you tired of:
 - 😫 Copy-pasting prompts across your codebase like it's 2022?
 - 🤯 Trying to remember which version of "write me a button" worked best?
@@ -11,9 +34,9 @@ Are you tired of:
 
 ## The Lazy Engineer's Solution
 
-Distil is your AI prompt sommelier - it handles all the boring stuff while you take credit for the results. Drop it into your existing OpenAI code, and it'll automatically:
+Distil is your AI prompt sommelier - it handles all the boring stuff while you take credit for the results. Just swap your OpenAI import with Distil, and it'll automatically:
 
-- 🎯 Version your prompts (even the ones you forgot about)
+- 🎯 Version your prompts (zero config required)
 - 📝 Create fine-tuning datasets while you sleep
 - 💰 Track your costs (so you can blame the intern)
 - 🚀 Deploy fine-tuned models with zero effort
@@ -22,104 +45,39 @@ Distil is your AI prompt sommelier - it handles all the boring stuff while you t
 
 ## How It Works
 
-### Template Discovery and Versioning 🔍
+### Zero Configuration Required 🎯
 
-Distil uses a two-phase approach to manage your prompts:
+Distil works out of the box as a drop-in replacement for the OpenAI library. No configuration needed:
 
-#### 1. Discovery Phase (First 50 Requests)
-During this phase, Distil:
-- Groups similar prompts using Jaccard similarity (e.g., "Write a React button" and "Create a React button" are similar)
-- Identifies variable parts of prompts (e.g., "Write a {component} in {framework}")
-- Creates template patterns using regex (e.g., "Write a \w+ in \w+")
-- Calculates consensus templates from each cluster
-
-Example:
 ```typescript
-// These prompts will be grouped together:
-"Write a login form in React"
-"Write a button in React"
-"Write a modal in React"
+// Your existing code stays exactly the same
+const response = await openai.createChatCompletion({
+  model: 'gpt-4o',
+  messages: [{ role: 'user', content: 'Write me a button' }]
+});
 
-// Discovered template:
-"Write a {component} in React"
+// But now you get:
+console.log(response._pvMeta);
+/*
+{
+  templateHash: 'abc123',  // Automatically detected template
+  variables: {
+    component: 'button'
+  },
+  usage: {
+    tokens: 150,
+    cost: 0.002,
+    responseTime: '123ms'
+  }
+}
+*/
 ```
 
-#### 2. Production Phase
-After discovery, Distil:
-- Matches new prompts against existing templates using regex
-- Extracts variables for tracking and analysis
-- Only creates new templates when prompts differ significantly
-- Maintains a version history for each template
-
-### Automatic Dataset Building 📚
-
-Every prompt-completion pair is automatically:
-1. Matched to a template
-2. Cleaned and normalized
-3. Enriched with metadata (tokens, cost, response time)
-4. Stored with quality metrics
-5. Grouped into potential fine-tuning datasets
-
-### Fine-tuning Magic ✨
-
-Distil takes the pain out of fine-tuning by:
-
-1. **Smart Dataset Selection**
-   - Automatically identifies high-performing prompt templates
-   - Groups similar prompts into coherent datasets
-   - Filters out low-quality or inconsistent examples
-   - Maintains separate validation sets for quality checks
-
-2. **Automatic Fine-tuning**
-   - Triggers fine-tuning when enough quality data is collected
-   - Handles dataset formatting and validation
-   - Manages the fine-tuning process with OpenAI
-   - Tracks model performance metrics
-
-3. **Intelligent Routing**
-   - Routes requests to the best model based on:
-     ```typescript
-     interface ModelRouting {
-       templateHash: string;
-       modelId: string;
-       isFineTuned: boolean;
-       active: boolean;
-       priority: number;
-       conditions?: {
-         minTokens?: number;    // For length-based routing
-         maxTokens?: number;    // Don't waste fine-tuned models on huge prompts
-         costThreshold?: number;// Budget control
-         timeThreshold?: number;// Performance requirements
-       };
-     }
-     ```
-   - Automatically falls back to base models when needed
-   - Supports A/B testing of different models
-   - Caches routing rules for performance
-
-### Why Fine-tune? 🎯
-
-Fine-tuning provides several benefits over pure prompt engineering:
-
-1. **Cost Efficiency**
-   - Fine-tuned models often need shorter prompts
-   - Lower token usage = lower costs
-   - Faster response times = better user experience
-
-2. **Consistency**
-   - More reliable outputs
-   - Better adherence to your specific patterns
-   - Reduced hallucinations
-
-3. **Performance**
-   - Faster response times
-   - Better handling of edge cases
-   - More concise outputs
-
-4. **Knowledge Embedding**
-   - Embed domain knowledge into the model
-   - Reduce prompt complexity
-   - Improve output quality
+All the magic happens automatically:
+- Template detection ✨
+- Variable extraction 🔍
+- Usage tracking 📊
+- Dataset building 📚
 
 ## Quick Start (for the impatient)
 
@@ -238,7 +196,7 @@ Here's how a template evolves from prompts to a fine-tuned model:
        completeness: 0.92
      }
    }
-   */
+   ```
    ```
 
 3. **Fine-tuning Process**
@@ -263,7 +221,7 @@ Here's how a template evolves from prompts to a fine-tuned model:
        validLoss: 0.145
      }
    }
-   */
+   ```
    ```
 
 4. **Model Evaluation**
@@ -281,7 +239,7 @@ Here's how a template evolves from prompts to a fine-tuned model:
        costSaving: '45%'
      }
    }
-   */
+   ```
    ```
 
 5. **Production Deployment**
