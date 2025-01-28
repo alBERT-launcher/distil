@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import crypto from 'crypto';
 import { stringSimilarity } from 'fast-string-similarity';
 import { encoding_for_model } from 'tiktoken';
-import { StorageAdapter, StorageConfig, createStorageAdapter, UsageStats, PromptLog } from './storage';
+import { StorageAdapter, StorageConfig, createStorageAdapter, UsageStats, PromptLog, ModelRouting } from './storage';
 
 interface TemplateEntry {
   pattern: RegExp;
@@ -78,6 +78,9 @@ export class LeanPromptVersioning {
   private dataset: DatasetEntry[] = [];
   private storage: StorageAdapter;
   private tokenizer: any;
+  private routingCache: Map<string, ModelRouting[]>;
+  private cacheTTL: number = 60000; // 1 minute
+  private lastCacheUpdate: Map<string, number>;
 
   constructor(
     private readonly config: {
@@ -90,6 +93,8 @@ export class LeanPromptVersioning {
     this.storage = createStorageAdapter(config.storage);
     this.discoveryThreshold = config.discoveryThreshold || 50;
     this.similarityThreshold = config.similarityThreshold || 0.7;
+    this.routingCache = new Map();
+    this.lastCacheUpdate = new Map();
   }
 
   async initialize(): Promise<void> {
@@ -137,8 +142,19 @@ export class LeanPromptVersioning {
     const startTime = Date.now();
     
     const versionData = await this.processPrompt(prompt);
+    const estimatedTokens = prompt.length / 4;
+    const estimatedCost = estimatedTokens * 0.00002;
+    const model = await this.getModelForTemplate(
+      versionData.templateHash,
+      estimatedTokens,
+      estimatedCost
+    );
+    
     const openai = new OpenAI(this.config.openaiConfig);
-    const response = await openai.completions.create(params);
+    const response = await openai.completions.create({
+      ...params,
+      model
+    });
     
     const durationMs = Date.now() - startTime;
     const completion = response.choices[0].text || '';
@@ -146,7 +162,7 @@ export class LeanPromptVersioning {
     const usage = this.calculateUsage(
       prompt,
       completion,
-      params.model,
+      model,
       durationMs
     );
 
@@ -157,7 +173,7 @@ export class LeanPromptVersioning {
       variables: versionData.variables,
       prompt,
       completion,
-      model: params.model,
+      model,
       usage
     });
     
@@ -173,9 +189,19 @@ export class LeanPromptVersioning {
     
     const startTime = Date.now();
     const versionData = await this.processPrompt(lastUserMessage);
+    const estimatedTokens = lastUserMessage.length / 4;
+    const estimatedCost = estimatedTokens * 0.00002;
+    const model = await this.getModelForTemplate(
+      versionData.templateHash,
+      estimatedTokens,
+      estimatedCost
+    );
     
     const openai = new OpenAI(this.config.openaiConfig);
-    const response = await openai.chat.completions.create(params);
+    const response = await openai.chat.completions.create({
+      ...params,
+      model
+    });
     
     const durationMs = Date.now() - startTime;
     const completion = response.choices[0].message?.content || '';
@@ -183,7 +209,7 @@ export class LeanPromptVersioning {
     const usage = this.calculateUsage(
       lastUserMessage,
       completion,
-      params.model,
+      model,
       durationMs
     );
 
@@ -194,7 +220,7 @@ export class LeanPromptVersioning {
       variables: versionData.variables,
       prompt: lastUserMessage,
       completion,
-      model: params.model,
+      model,
       usage
     });
     
@@ -325,6 +351,47 @@ export class LeanPromptVersioning {
       .substring(0, 8);
   }
 
+  private async getModelForTemplate(
+    templateHash: string,
+    estimatedTokens?: number,
+    estimatedCost?: number
+  ): Promise<string> {
+    // Check cache first
+    const now = Date.now();
+    const lastUpdate = this.lastCacheUpdate.get(templateHash) || 0;
+    
+    if (now - lastUpdate > this.cacheTTL || !this.routingCache.has(templateHash)) {
+      const routes = await this.storage.getModelRouting(templateHash);
+      this.routingCache.set(templateHash, routes);
+      this.lastCacheUpdate.set(templateHash, now);
+    }
+
+    const routes = this.routingCache.get(templateHash) || [];
+    
+    // Find the first active route that matches conditions
+    for (const route of routes) {
+      if (!route.active) continue;
+
+      const conditions = route.conditions || {};
+      
+      if (estimatedTokens !== undefined) {
+        if (conditions.minTokens && estimatedTokens < conditions.minTokens) continue;
+        if (conditions.maxTokens && estimatedTokens > conditions.maxTokens) continue;
+      }
+      
+      if (estimatedCost !== undefined && conditions.costThreshold) {
+        if (estimatedCost > conditions.costThreshold) continue;
+      }
+
+      return route.isFineTuned ? 
+        `ft:${route.modelId}` : // Fine-tuned model
+        route.modelId;          // Base model
+    }
+
+    // Default to GPT-4 if no routes match
+    return 'gpt-4';
+  }
+
   private wrapResponse<T extends { choices: Array<{ text?: string; message?: { content: string } }> }>(
     response: T,
     versionData: PromptMatch,
@@ -441,5 +508,23 @@ export class LeanPromptVersioning {
       averageTokensPerSecond: 0,
       promptCount: 0
     });
+  }
+
+  async setModelRouting(routing: ModelRouting): Promise<void> {
+    await this.storage.setModelRouting(routing);
+    // Invalidate cache for this template
+    this.routingCache.delete(routing.templateHash);
+    this.lastCacheUpdate.delete(routing.templateHash);
+  }
+
+  async getModelRouting(templateHash: string): Promise<ModelRouting[]> {
+    return this.storage.getModelRouting(templateHash);
+  }
+
+  async deleteModelRouting(templateHash: string, modelId: string): Promise<void> {
+    await this.storage.deleteModelRouting(templateHash, modelId);
+    // Invalidate cache for this template
+    this.routingCache.delete(templateHash);
+    this.lastCacheUpdate.delete(templateHash);
   }
 }
