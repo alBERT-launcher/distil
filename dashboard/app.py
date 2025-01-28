@@ -181,7 +181,7 @@ elif page == "Models":
     with col2:
         base_model = st.selectbox(
             "Base Model",
-            ["gpt-3.5-turbo", "gpt-4"]
+            ["gpt-4o-mini", "gpt-4o"]
         )
     
     if st.button("Start Fine-tuning"):

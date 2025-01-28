@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { stringSimilarity } from 'fast-string-similarity';
 import { encoding_for_model } from 'tiktoken';
 import { StorageAdapter, StorageConfig, createStorageAdapter, UsageStats, PromptLog, ModelRouting } from './storage';
+import { Stream } from 'openai/streaming';
 
 interface TemplateEntry {
   pattern: RegExp;
@@ -23,6 +24,18 @@ interface DatasetEntry {
   variables: Record<string, string>;
   output: string;
   timestamp: Date;
+}
+
+interface DistilMeta {
+  modelVersion: string;
+  templateHash: string;
+  variables: Record<string, string>;
+  template: string;
+  usage: UsageStats;
+}
+
+interface DistilResponse<T> extends Omit<T, '_pvMeta'> {
+  _pvMeta: DistilMeta;
 }
 
 class PrefixTree {
@@ -71,7 +84,7 @@ class PrefixTree {
   }
 }
 
-export class LeanPromptVersioning {
+export class DistilAI {
   private templateBank: Map<string, TemplateEntry> = new Map();
   private isDiscoveryPhase = true;
   private discoveryQueue: string[] = [];
@@ -81,151 +94,209 @@ export class LeanPromptVersioning {
   private routingCache: Map<string, ModelRouting[]>;
   private cacheTTL: number = 60000; // 1 minute
   private lastCacheUpdate: Map<string, number>;
+  private discoveryThreshold: number;
+  private similarityThreshold: number;
+  private openaiClient: OpenAI;
 
-  constructor(
-    private readonly config: {
-      openaiConfig: OpenAI.ClientOptions;
-      storage: StorageConfig;
-      discoveryThreshold?: number;
-      similarityThreshold?: number;
-    }
-  ) {
-    this.storage = createStorageAdapter(config.storage);
+  constructor(config: OpenAI.ClientOptions & {
+    storage?: StorageConfig;
+    discoveryThreshold?: number;
+    similarityThreshold?: number;
+  }) {
+    this.openaiClient = new OpenAI(config);
+    this.storage = createStorageAdapter(config.storage || { type: 'memory' });
     this.discoveryThreshold = config.discoveryThreshold || 50;
     this.similarityThreshold = config.similarityThreshold || 0.7;
     this.routingCache = new Map();
     this.lastCacheUpdate = new Map();
+    this.tokenizer = encoding_for_model('gpt-4o');
   }
 
-  async initialize(): Promise<void> {
-    await this.storage.initialize();
-    this.tokenizer = encoding_for_model('gpt-4');
-  }
+  chat = {
+    completions: {
+      create: async (
+        params: OpenAI.ChatCompletionCreateParamsNonStreaming
+      ): Promise<DistilResponse<OpenAI.ChatCompletion>> => {
+        const lastUserMessage = params.messages
+          .filter(m => m.role === 'user')
+          .pop()?.content as string;
+        
+        const startTime = Date.now();
+        const versionData = await this.processPrompt(lastUserMessage);
+        const estimatedTokens = lastUserMessage.length / 4;
+        const estimatedCost = estimatedTokens * 0.00002;
+        const model = await this.getModelForTemplate(
+          versionData.templateHash,
+          estimatedTokens,
+          estimatedCost
+        );
 
-  private calculateUsage(
-    prompt: string,
-    completion: string,
-    model: string,
-    durationMs: number
-  ): UsageStats {
-    const promptTokens = this.tokenizer.encode(prompt).length;
-    const completionTokens = this.tokenizer.encode(completion).length;
-    const totalTokens = promptTokens + completionTokens;
+        // Handle function/tool calling
+        const response = await this.openaiClient.chat.completions.create({
+          ...params,
+          model,
+          stream: false,
+          // Preserve tool/function calling parameters
+          tools: params.tools,
+          tool_choice: params.tool_choice,
+          response_format: params.response_format,
+          seed: params.seed,
+          temperature: params.temperature,
+          top_p: params.top_p,
+          max_tokens: params.max_tokens,
+          presence_penalty: params.presence_penalty,
+          frequency_penalty: params.frequency_penalty,
+          logit_bias: params.logit_bias,
+          user: params.user
+        });
+        
+        const durationMs = Date.now() - startTime;
+        const completion = response.choices[0].message?.content || '';
+        const toolCalls = response.choices[0].message?.tool_calls;
+        
+        const usage = this.calculateUsage(
+          lastUserMessage,
+          completion,
+          model,
+          durationMs
+        );
 
-    // Cost calculation based on model
-    const costs: Record<string, { prompt: number; completion: number }> = {
-      'gpt-4': { prompt: 0.03, completion: 0.06 },
-      'gpt-3.5-turbo': { prompt: 0.001, completion: 0.002 }
-    };
+        await this.logPrompt({
+          timestamp: new Date(),
+          templateHash: versionData.templateHash,
+          template: this.templateBank.get(versionData.templateHash)!.rawTemplate,
+          variables: versionData.variables,
+          prompt: lastUserMessage,
+          completion,
+          model,
+          usage,
+          toolCalls: toolCalls ? JSON.stringify(toolCalls) : undefined
+        });
+        
+        return {
+          ...response,
+          _pvMeta: {
+            modelVersion: this.templateBank.get(versionData.templateHash)!.modelVersion,
+            templateHash: versionData.templateHash,
+            variables: versionData.variables,
+            template: this.templateBank.get(versionData.templateHash)!.rawTemplate,
+            usage
+          }
+        };
+      },
 
-    const modelCosts = costs[model] || costs['gpt-3.5-turbo'];
-    const costUSD = 
-      (promptTokens * modelCosts.prompt + 
-       completionTokens * modelCosts.completion) / 1000;
+      createStreaming: async (
+        params: OpenAI.ChatCompletionCreateParamsStreaming
+      ): Promise<Stream<OpenAI.ChatCompletionChunk>> => {
+        const lastUserMessage = params.messages
+          .filter(m => m.role === 'user')
+          .pop()?.content as string;
+        
+        const versionData = await this.processPrompt(lastUserMessage);
+        const estimatedTokens = lastUserMessage.length / 4;
+        const estimatedCost = estimatedTokens * 0.00002;
+        const model = await this.getModelForTemplate(
+          versionData.templateHash,
+          estimatedTokens,
+          estimatedCost
+        );
 
-    const tokensPerSecond = totalTokens / (durationMs / 1000);
+        const startTime = Date.now();
+        const stream = await this.openaiClient.chat.completions.create({
+          ...params,
+          model,
+          stream: true,
+          // Preserve tool/function calling parameters
+          tools: params.tools,
+          tool_choice: params.tool_choice,
+          response_format: params.response_format,
+          seed: params.seed,
+          temperature: params.temperature,
+          top_p: params.top_p,
+          max_tokens: params.max_tokens,
+          presence_penalty: params.presence_penalty,
+          frequency_penalty: params.frequency_penalty,
+          logit_bias: params.logit_bias,
+          user: params.user
+        });
 
-    return {
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      costUSD,
-      durationMs,
-      tokensPerSecond
-    };
-  }
+        let fullCompletion = '';
+        let toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
+        const controller = new AbortController();
+        const self = this;
+        
+        const enhancedStream = new Stream(async function*(this: Stream<OpenAI.ChatCompletionChunk>) {
+          try {
+            for await (const chunk of stream) {
+              // Accumulate tool calls from chunks
+              if (chunk.choices[0]?.delta?.tool_calls) {
+                const deltaToolCalls = chunk.choices[0].delta.tool_calls;
+                for (const deltaToolCall of deltaToolCalls) {
+                  const existingToolCall = toolCalls.find(t => t.index === deltaToolCall.index);
+                  if (existingToolCall) {
+                    // Append to existing tool call
+                    existingToolCall.function.arguments += deltaToolCall.function?.arguments || '';
+                    existingToolCall.function.name = deltaToolCall.function?.name || existingToolCall.function.name;
+                  } else {
+                    // Create new tool call
+                    toolCalls.push({
+                      id: deltaToolCall.id || `call_${deltaToolCall.index}`,
+                      type: 'function',
+                      function: {
+                        name: deltaToolCall.function?.name || '',
+                        arguments: deltaToolCall.function?.arguments || ''
+                      }
+                    });
+                  }
+                }
+              }
+              
+              fullCompletion += chunk.choices[0]?.delta?.content || '';
+              yield chunk;
+            }
 
-  async createCompletion(
-    params: OpenAI.CompletionCreateParams
-  ): Promise<OpenAI.CompletionCreateResponse & { _pvMeta: any }> {
-    const prompt = params.prompt as string;
-    const startTime = Date.now();
-    
-    const versionData = await this.processPrompt(prompt);
-    const estimatedTokens = prompt.length / 4;
-    const estimatedCost = estimatedTokens * 0.00002;
-    const model = await this.getModelForTemplate(
-      versionData.templateHash,
-      estimatedTokens,
-      estimatedCost
-    );
-    
-    const openai = new OpenAI(this.config.openaiConfig);
-    const response = await openai.completions.create({
-      ...params,
-      model
-    });
-    
-    const durationMs = Date.now() - startTime;
-    const completion = response.choices[0].text || '';
-    
-    const usage = this.calculateUsage(
-      prompt,
-      completion,
-      model,
-      durationMs
-    );
+            const durationMs = Date.now() - startTime;
+            const usage = self.calculateUsage(
+              lastUserMessage,
+              fullCompletion,
+              model,
+              durationMs
+            );
 
-    await this.logPrompt({
-      timestamp: new Date(),
-      templateHash: versionData.templateHash,
-      template: this.templateBank.get(versionData.templateHash)!.rawTemplate,
-      variables: versionData.variables,
-      prompt,
-      completion,
-      model,
-      usage
-    });
-    
-    return this.wrapResponse(response, versionData, usage);
-  }
+            await self.logPrompt({
+              timestamp: new Date(),
+              templateHash: versionData.templateHash,
+              template: self.templateBank.get(versionData.templateHash)!.rawTemplate,
+              variables: versionData.variables,
+              prompt: lastUserMessage,
+              completion: fullCompletion,
+              model,
+              usage,
+              toolCalls: toolCalls.length > 0 ? JSON.stringify(toolCalls) : undefined
+            });
+          } catch (error) {
+            console.error('Error in stream processing:', error);
+            throw error;
+          }
+        }, controller);
 
-  async createChatCompletion(
-    params: OpenAI.ChatCompletionCreateParams
-  ): Promise<OpenAI.ChatCompletion & { _pvMeta: any }> {
-    const lastUserMessage = params.messages
-      .filter(m => m.role === 'user')
-      .pop()?.content as string;
-    
-    const startTime = Date.now();
-    const versionData = await this.processPrompt(lastUserMessage);
-    const estimatedTokens = lastUserMessage.length / 4;
-    const estimatedCost = estimatedTokens * 0.00002;
-    const model = await this.getModelForTemplate(
-      versionData.templateHash,
-      estimatedTokens,
-      estimatedCost
-    );
-    
-    const openai = new OpenAI(this.config.openaiConfig);
-    const response = await openai.chat.completions.create({
-      ...params,
-      model
-    });
-    
-    const durationMs = Date.now() - startTime;
-    const completion = response.choices[0].message?.content || '';
-    
-    const usage = this.calculateUsage(
-      lastUserMessage,
-      completion,
-      model,
-      durationMs
-    );
+        // Handle cleanup when the stream is aborted
+        controller.signal.addEventListener('abort', async () => {
+          try {
+            // @ts-ignore - stream.controller exists but isn't typed
+            if (stream.controller) {
+              // @ts-ignore
+              await stream.controller.abort();
+            }
+          } catch (error) {
+            console.warn('Error during stream abort:', error);
+          }
+        });
 
-    await this.logPrompt({
-      timestamp: new Date(),
-      templateHash: versionData.templateHash,
-      template: this.templateBank.get(versionData.templateHash)!.rawTemplate,
-      variables: versionData.variables,
-      prompt: lastUserMessage,
-      completion,
-      model,
-      usage
-    });
-    
-    return this.wrapResponse(response, versionData, usage);
-  }
+        return enhancedStream;
+      }
+    }
+  };
 
   private async logPrompt(log: PromptLog): Promise<void> {
     await this.storage.logPrompt(log);
@@ -320,12 +391,17 @@ export class LeanPromptVersioning {
 
   private matchToExistingTemplate(prompt: string): PromptMatch {
     for (const [hash, entry] of this.templateBank) {
-      const match = prompt.match(entry.pattern);
-      if (match && match.groups) {
-        return {
-          templateHash: hash,
-          variables: match.groups
-        };
+      try {
+        const match = prompt.match(entry.pattern);
+        if (match && match.groups) {
+          return {
+            templateHash: hash,
+            variables: match.groups
+          };
+        }
+      } catch (error) {
+        console.warn(`Error matching template ${hash}:`, error);
+        continue;
       }
     }
     
@@ -388,15 +464,15 @@ export class LeanPromptVersioning {
         route.modelId;          // Base model
     }
 
-    // Default to GPT-4 if no routes match
-    return 'gpt-4';
+    // Default to gpt-4o if no routes match
+    return 'gpt-4o';
   }
 
   private wrapResponse<T extends { choices: Array<{ text?: string; message?: { content: string } }> }>(
     response: T,
     versionData: PromptMatch,
     usage: UsageStats
-  ): T & { _pvMeta: any } {
+  ): DistilResponse<T> {
     const outputText = response.choices[0].text || 
       (response.choices[0].message && response.choices[0].message.content) ||
       '';
@@ -474,6 +550,84 @@ export class LeanPromptVersioning {
     };
   }
 
+  async createFineTuningJob(params: OpenAI.FineTuningJobCreateParams) {
+    return this.openaiClient.fineTuning.jobs.create(params);
+  }
+
+  async listFineTuningJobs(params?: OpenAI.FineTuningJobListParams) {
+    return this.openaiClient.fineTuning.jobs.list(params);
+  }
+
+  async retrieveFineTuningJob(jobId: string) {
+    return this.openaiClient.fineTuning.jobs.retrieve(jobId);
+  }
+
+  async cancelFineTuningJob(jobId: string) {
+    return this.openaiClient.fineTuning.jobs.cancel(jobId);
+  }
+
+  async listFineTuningEvents(jobId: string, params?: OpenAI.FineTuningJobListEventsParams) {
+    return this.openaiClient.fineTuning.jobs.listEvents(jobId, params);
+  }
+
+  async createFile(params: OpenAI.FileCreateParams) {
+    return this.openaiClient.files.create(params);
+  }
+
+  async deleteFile(fileId: string) {
+    return this.openaiClient.files.delete(fileId);
+  }
+
+  async retrieveFile(fileId: string) {
+    return this.openaiClient.files.retrieve(fileId);
+  }
+
+  async listFiles() {
+    return this.openaiClient.files.list();
+  }
+
+  async createFineTuneFromTemplate(templateHash: string) {
+    const template = this.templateBank.get(templateHash);
+    if (!template) throw new Error('Template not found');
+
+    const dataset = this.exportDataset({ templateHash });
+    
+    // Format data for fine-tuning
+    const trainingData = dataset.map(entry => ({
+      messages: [
+        { role: 'user', content: this.replaceVariables(template.rawTemplate, entry.variables) },
+        { role: 'assistant', content: entry.output }
+      ]
+    }));
+
+    // Create JSONL file content
+    const jsonlContent = trainingData.map(data => JSON.stringify(data)).join('\n');
+    const buffer = Buffer.from(jsonlContent, 'utf-8');
+
+    // Upload training file
+    const file = await this.createFile({
+      file: buffer,
+      purpose: 'fine-tune'
+    });
+
+    // Create fine-tuning job
+    const fineTuningJob = await this.createFineTuningJob({
+      training_file: file.id,
+      model: 'gpt-4o-mini',
+      hyperparameters: {
+        n_epochs: 3
+      }
+    });
+
+    return {
+      modelVersion: template.modelVersion,
+      trainingExamples: trainingData.length,
+      template: template.rawTemplate,
+      jobId: fineTuningJob.id,
+      fileId: file.id
+    };
+  }
+
   private replaceVariables(template: string, variables: Record<string, string>): string {
     let result = template;
     Object.entries(variables).forEach(([key, value]) => {
@@ -526,5 +680,51 @@ export class LeanPromptVersioning {
     // Invalidate cache for this template
     this.routingCache.delete(templateHash);
     this.lastCacheUpdate.delete(templateHash);
+  }
+
+  private calculateUsage(
+    prompt: string,
+    completion: string,
+    model: string,
+    durationMs: number
+  ): UsageStats {
+    try {
+      const promptTokens = this.tokenizer.encode(prompt).length;
+      const completionTokens = this.tokenizer.encode(completion).length;
+      const totalTokens = promptTokens + completionTokens;
+
+      // Cost calculation based on model
+      const costs: Record<string, { prompt: number; completion: number }> = {
+        'gpt-4o': { prompt: 0.03, completion: 0.06 },
+        'gpt-4o-mini': { prompt: 0.001, completion: 0.002 }
+      };
+
+      const baseModel = model.startsWith('ft:') ? model.split(':')[1] : model;
+      const modelCosts = costs[baseModel] || costs['gpt-4o-mini'];
+      const costUSD = 
+        (promptTokens * modelCosts.prompt + 
+         completionTokens * modelCosts.completion) / 1000;
+
+      const tokensPerSecond = totalTokens / (durationMs / 1000);
+
+      return {
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        costUSD,
+        durationMs,
+        tokensPerSecond
+      };
+    } catch (error) {
+      console.warn('Error calculating usage:', error);
+      return {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        costUSD: 0,
+        durationMs,
+        tokensPerSecond: 0
+      };
+    }
   }
 }

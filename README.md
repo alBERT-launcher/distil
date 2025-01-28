@@ -14,7 +14,8 @@ import { Distil } from 'distil';
 const openai = new Distil({ apiKey: process.env.OPENAI_API_KEY });
 
 // That's it! Use it exactly like before
-const response = await openai.createChatCompletion({
+const response = await openai.chat.completions.create({
+  model: 'gpt-4o',
   messages: [{ role: 'user', content: 'Write me a button' }]
 });
 
@@ -51,7 +52,7 @@ Distil works out of the box as a drop-in replacement for the OpenAI library. No 
 
 ```typescript
 // Your existing code stays exactly the same
-const response = await openai.createChatCompletion({
+const response = await openai.chat.completions.create({
   model: 'gpt-4o',
   messages: [{ role: 'user', content: 'Write me a button' }]
 });
@@ -88,8 +89,8 @@ import { Distil } from 'distil';
 const ai = new Distil({ apiKey: process.env.OPENAI_API_KEY });
 
 // Use it like regular OpenAI (but better)
-const response = await ai.createChatCompletion({
-  model: 'gpt-4',
+const response = await ai.chat.completions.create({
+  model: 'gpt-4o',
   messages: [{ role: 'user', content: 'Write me a button' }]
 });
 
@@ -139,15 +140,18 @@ Let's see how Distil learns from your prompts:
 
 ```typescript
 // First few prompts
-await ai.createChatCompletion({
+await openai.chat.completions.create({
+  model: 'gpt-4o',
   messages: [{ role: 'user', content: 'Create a login form in React with email and password' }]
 });
 
-await ai.createChatCompletion({
+await openai.chat.completions.create({
+  model: 'gpt-4o',
   messages: [{ role: 'user', content: 'Create a signup form in React with username and email' }]
 });
 
-await ai.createChatCompletion({
+await openai.chat.completions.create({
+  model: 'gpt-4o',
   messages: [{ role: 'user', content: 'Create a contact form in React with name and message' }]
 });
 
@@ -168,7 +172,8 @@ Here's how a template evolves from prompts to a fine-tuned model:
 1. **Data Collection**
    ```typescript
    // Your regular API calls
-   await ai.createChatCompletion({
+   await openai.chat.completions.create({
+     model: 'gpt-4o',
      messages: [{ role: 'user', content: 'Create a React button with hover animation' }]
    });
    
@@ -181,9 +186,8 @@ Here's how a template evolves from prompts to a fine-tuned model:
 2. **Dataset Curation**
    ```typescript
    // In the dashboard
-   const dataset = await ai.getDataset('button-template');
+   const dataset = await openai.getDataset('button-template');
    console.log(dataset.stats);
-   /*
    {
      totalExamples: 150,
      avgRating: 4.2,
@@ -197,37 +201,38 @@ Here's how a template evolves from prompts to a fine-tuned model:
      }
    }
    ```
-   ```
 
 3. **Fine-tuning Process**
    ```typescript
    // Automatic fine-tuning when criteria are met
-   const model = await ai.createFineTune('button-template', {
-     baseModel: 'gpt-3.5-turbo',
-     // Optional parameters
-     validationSplit: 0.2,
-     epochs: 3,
-     learningRate: 2e-5
+   const model = await openai.fineTuning.jobs.create({
+     model: 'gpt-4o-mini',
+     training_file: dataset.fileId,
+     hyperparameters: {
+       n_epochs: 3,
+       learning_rate_multiplier: 2e-5
+     },
+     validation_file: dataset.validationFileId
    });
 
    // Track fine-tuning progress
-   const status = await model.getStatus();
-   /*
+   const status = await openai.fineTuning.jobs.retrieve(model.id);
    {
-     status: 'training',
-     progress: 67,
+     status: 'running',
+     trained_tokens: 12800,
+     training_file: dataset.fileId,
+     validation_file: dataset.validationFileId,
+     trained_percentage: 67,
      metrics: {
-       trainLoss: 0.123,
-       validLoss: 0.145
+       training_loss: 0.123,
+       validation_loss: 0.145
      }
    }
-   ```
    ```
 
 4. **Model Evaluation**
    ```typescript
    const evaluation = await model.evaluate();
-   /*
    {
      accuracy: 0.92,
      consistency: 0.88,
@@ -240,12 +245,11 @@ Here's how a template evolves from prompts to a fine-tuned model:
      }
    }
    ```
-   ```
 
 5. **Production Deployment**
    ```typescript
    // Set up routing rules
-   await ai.setModelRouting({
+   await openai.setModelRouting({
      templateHash: 'button-template',
      modelId: model.id,
      isFineTuned: true,
@@ -259,9 +263,9 @@ Here's how a template evolves from prompts to a fine-tuned model:
    });
 
    // Add fallback route
-   await ai.setModelRouting({
+   await openai.setModelRouting({
      templateHash: 'button-template',
-     modelId: 'gpt-4',
+     modelId: 'gpt-4o',
      isFineTuned: false,
      active: true,
      priority: 0  // Lower priority = fallback
@@ -274,7 +278,8 @@ Here's what you get with fine-tuned models:
 
 ```typescript
 // Before fine-tuning
-const before = await ai.createChatCompletion({
+const before = await openai.chat.completions.create({
+  model: 'gpt-4o',
   messages: [{
     role: 'user',
     content: `
@@ -295,7 +300,8 @@ const before = await ai.createChatCompletion({
 // - $0.02 cost
 
 // After fine-tuning
-const after = await ai.createChatCompletion({
+const after = await openai.chat.completions.create({
+  model: 'ft:gpt-4o-mini:distil:button-v1',
   messages: [{
     role: 'user',
     content: 'React button: hover, primary, loading, a11y, TS'

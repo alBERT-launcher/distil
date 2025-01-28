@@ -22,6 +22,7 @@ export interface PromptLog {
   completion: string;
   model: string;
   usage: UsageStats;
+  toolCalls?: string; // JSON stringified tool calls
 }
 
 export interface ModelRouting {
@@ -191,7 +192,8 @@ export class CsvStorageAdapter implements StorageAdapter {
         { id: 'totalTokens', title: 'TOTAL_TOKENS' },
         { id: 'costUSD', title: 'COST_USD' },
         { id: 'durationMs', title: 'DURATION_MS' },
-        { id: 'tokensPerSecond', title: 'TOKENS_PER_SECOND' }
+        { id: 'tokensPerSecond', title: 'TOKENS_PER_SECOND' },
+        { id: 'toolCalls', title: 'TOOL_CALLS' }
       ]
     });
   }
@@ -200,7 +202,8 @@ export class CsvStorageAdapter implements StorageAdapter {
     await this.csvWriter.writeRecords([{
       ...log,
       variables: JSON.stringify(log.variables),
-      ...log.usage
+      ...log.usage,
+      toolCalls: log.toolCalls
     }]);
   }
 
@@ -262,7 +265,8 @@ export class ElasticsearchStorageAdapter implements StorageAdapter {
                 durationMs: { type: 'integer' },
                 tokensPerSecond: { type: 'float' }
               }
-            }
+            },
+            toolCalls: { type: 'text' }
           }
         }
       });
@@ -380,7 +384,8 @@ export class SupabaseStorageAdapter implements StorageAdapter {
       .from(this.table)
       .insert([{
         ...log,
-        timestamp: log.timestamp.toISOString()
+        timestamp: log.timestamp.toISOString(),
+        toolCalls: log.toolCalls
       }]);
   }
 
