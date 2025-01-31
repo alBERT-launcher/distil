@@ -105,9 +105,8 @@ export class DistilAI {
   private isDiscoveryPhase = true;
   private discoveryQueue: string[] = [];
   private dataset: DatasetEntry[] = [];
-  private storage: StorageAdapter;
+  public storage: StorageAdapter;
   private tokenizer: any;
-  private routingCache: Map<string, ModelRouting[]>;
   private cacheTTL: number = 60000; // 1 minute
   private lastCacheUpdate: Map<string, number>;
   private discoveryThreshold: number;
@@ -127,7 +126,6 @@ export class DistilAI {
     this.storage = createStorageAdapter(config.storage);
     this.discoveryThreshold = config.discoveryThreshold || 50;
     this.similarityThreshold = config.similarityThreshold || 0.7;
-    this.routingCache = new Map();
     this.lastCacheUpdate = new Map();
     this.tokenizer = encoding_for_model('gpt-4o');
   }
@@ -145,11 +143,7 @@ export class DistilAI {
         const versionData = await this.processPrompt(lastUserMessage);
         const estimatedTokens = lastUserMessage.length / 4;
         const estimatedCost = estimatedTokens * 0.00002;
-        const model = await this.getModelForTemplate(
-          versionData.templateHash,
-          estimatedTokens,
-          estimatedCost
-        );
+        const model = 'gpt-4o';
 
         // Handle function/tool calling
         const response = await this.openaiClient.chat.completions.create({
@@ -215,11 +209,7 @@ export class DistilAI {
         const versionData = await this.processPrompt(lastUserMessage);
         const estimatedTokens = lastUserMessage.length / 4;
         const estimatedCost = estimatedTokens * 0.00002;
-        const model = await this.getModelForTemplate(
-          versionData.templateHash,
-          estimatedTokens,
-          estimatedCost
-        );
+        const model = 'gpt-4o';
 
         const startTime = Date.now();
         const stream = await this.openaiClient.chat.completions.create({
@@ -447,134 +437,6 @@ export class DistilAI {
       .substring(0, 8);
   }
 
-  private async getModelForTemplate(
-    templateHash: string,
-    estimatedTokens?: number,
-    estimatedCost?: number
-  ): Promise<string> {
-    // Check cache first
-    const now = Date.now();
-    const lastUpdate = this.lastCacheUpdate.get(templateHash) || 0;
-    
-    if (now - lastUpdate > this.cacheTTL || !this.routingCache.has(templateHash)) {
-      const routes = await this.storage.getModelRouting(templateHash);
-      this.routingCache.set(templateHash, routes);
-      this.lastCacheUpdate.set(templateHash, now);
-    }
-
-    const routes = this.routingCache.get(templateHash) || [];
-    
-    // Find the first active route that matches conditions
-    for (const route of routes) {
-      if (!route.active) continue;
-
-      const conditions = route.conditions || {};
-      
-      if (estimatedTokens !== undefined) {
-        if (conditions.minTokens && estimatedTokens < conditions.minTokens) continue;
-        if (conditions.maxTokens && estimatedTokens > conditions.maxTokens) continue;
-      }
-      
-      if (estimatedCost !== undefined && conditions.costThreshold) {
-        if (estimatedCost > conditions.costThreshold) continue;
-      }
-
-      return route.isFineTuned ? 
-        `ft:${route.modelId}` : // Fine-tuned model
-        route.modelId;          // Base model
-    }
-
-    // Default to gpt-4o if no routes match
-    return 'gpt-4o';
-  }
-
-  async createFineTuningJob(params: OpenAI.FineTuning.JobCreateParams) {
-    return this.openaiClient.fineTuning.jobs.create(params);
-  }
-
-  async listFineTuningJobs(params?: OpenAI.FineTuning.JobListParams) {
-    return this.openaiClient.fineTuning.jobs.list(params);
-  }
-
-  async retrieveFineTuningJob(jobId: string) {
-    return this.openaiClient.fineTuning.jobs.retrieve(jobId);
-  }
-
-  async cancelFineTuningJob(jobId: string) {
-    return this.openaiClient.fineTuning.jobs.cancel(jobId);
-  }
-
-  async listFineTuningEvents(jobId: string, params?: OpenAI.FineTuning.JobListEventsParams) {
-    return this.openaiClient.fineTuning.jobs.listEvents(jobId, params);
-  }
-
-  async createFile(params: OpenAI.FileCreateParams) {
-    return this.openaiClient.files.create(params);
-  }
-
-  async deleteFile(fileId: string) {
-    return this.openaiClient.files.del(fileId);
-  }
-
-  async retrieveFile(fileId: string) {
-    return this.openaiClient.files.retrieve(fileId);
-  }
-
-  async listFiles() {
-    return this.openaiClient.files.list();
-  }
-
-  async createFineTuneFromTemplate(templateHash: string) {
-    const template = this.templateBank.get(templateHash);
-    if (!template) throw new Error('Template not found');
-
-    const dataset = this.exportDataset({ templateHash });
-    
-    // Format data for fine-tuning
-    const trainingData = dataset.map((entry: DatasetEntry) => ({
-      messages: [
-        { role: 'user', content: this.replaceVariables(template.rawTemplate, entry.variables) },
-        { role: 'assistant', content: entry.output }
-      ]
-    })) as TrainingDataEntry[];
-
-    // Validate training data
-    for (const data of trainingData) {
-      if (data.messages.length !== 2) {
-        throw new Error('Training data entry must contain exactly 2 messages');
-      }
-    }
-
-    // Create JSONL file content
-    const jsonlContent = trainingData
-      .map((data: TrainingDataEntry) => JSON.stringify(data))
-      .join('\n');
-    const buffer = Buffer.from(jsonlContent, 'utf-8');
-
-    // Upload training file
-    const file = await this.createFile({
-      file: new File([buffer], 'training-data.jsonl', { type: 'application/jsonl' }),
-      purpose: 'fine-tune'
-    });
-
-    // Create fine-tuning job
-    const fineTuningJob = await this.createFineTuningJob({
-      training_file: file.id,
-      model: 'gpt-4o-mini',
-      hyperparameters: {
-        n_epochs: 3
-      }
-    });
-
-    return {
-      modelVersion: template.modelVersion,
-      trainingExamples: trainingData.length,
-      template: template.rawTemplate,
-      jobId: fineTuningJob.id,
-      fileId: file.id
-    };
-  }
-
   private replaceVariables(template: string, variables: Record<string, string>): string {
     let result = template;
     Object.entries(variables).forEach(([key, value]) => {
@@ -628,24 +490,6 @@ export class DistilAI {
       averageTokensPerSecond: 0,
       promptCount: 0
     });
-  }
-
-  async setModelRouting(routing: ModelRouting): Promise<void> {
-    await this.storage.setModelRouting(routing);
-    // Invalidate cache for this template
-    this.routingCache.delete(routing.templateHash);
-    this.lastCacheUpdate.delete(routing.templateHash);
-  }
-
-  async getModelRouting(templateHash: string): Promise<ModelRouting[]> {
-    return this.storage.getModelRouting(templateHash);
-  }
-
-  async deleteModelRouting(templateHash: string, modelId: string): Promise<void> {
-    await this.storage.deleteModelRouting(templateHash, modelId);
-    // Invalidate cache for this template
-    this.routingCache.delete(templateHash);
-    this.lastCacheUpdate.delete(templateHash);
   }
 
   private calculateUsage(
