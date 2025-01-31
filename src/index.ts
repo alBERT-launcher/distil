@@ -34,8 +34,24 @@ interface DistilMeta {
   usage: UsageStats;
 }
 
-interface DistilResponse<T> extends Omit<T, '_pvMeta'> {
-  _pvMeta: DistilMeta;
+type DistilResponse<T extends object> = Omit<T, '_pvMeta'> & {
+  _pvMeta?: Record<string, unknown>;
+};
+
+interface TrainingDataEntry {
+  messages: [
+    { role: 'user', content: string },
+    { role: 'assistant', content: string }
+  ];
+}
+
+interface LocalStorageConfig {
+  type: 'memory' | 'redis';
+  options?: {
+    host?: string;
+    port?: number;
+    password?: string;
+  };
 }
 
 class PrefixTree {
@@ -98,13 +114,17 @@ export class DistilAI {
   private similarityThreshold: number;
   private openaiClient: OpenAI;
 
-  constructor(config: OpenAI.ClientOptions & {
-    storage?: StorageConfig;
+  constructor(config: {
+    apiKey: string;
+    organization?: string;
+    baseURL?: string;
+  } & {
+    storage: StorageConfig;
     discoveryThreshold?: number;
     similarityThreshold?: number;
   }) {
     this.openaiClient = new OpenAI(config);
-    this.storage = createStorageAdapter(config.storage || { type: 'memory' });
+    this.storage = createStorageAdapter(config.storage);
     this.discoveryThreshold = config.discoveryThreshold || 50;
     this.similarityThreshold = config.similarityThreshold || 0.7;
     this.routingCache = new Map();
@@ -232,7 +252,7 @@ export class DistilAI {
               if (chunk.choices[0]?.delta?.tool_calls) {
                 const deltaToolCalls = chunk.choices[0].delta.tool_calls;
                 for (const deltaToolCall of deltaToolCalls) {
-                  const existingToolCall = toolCalls.find(t => t.index === deltaToolCall.index);
+                  const existingToolCall = toolCalls.find(t => t.id === deltaToolCall.id);
                   if (existingToolCall) {
                     // Append to existing tool call
                     existingToolCall.function.arguments += deltaToolCall.function?.arguments || '';
@@ -468,93 +488,11 @@ export class DistilAI {
     return 'gpt-4o';
   }
 
-  private wrapResponse<T extends { choices: Array<{ text?: string; message?: { content: string } }> }>(
-    response: T,
-    versionData: PromptMatch,
-    usage: UsageStats
-  ): DistilResponse<T> {
-    const outputText = response.choices[0].text || 
-      (response.choices[0].message && response.choices[0].message.content) ||
-      '';
-    
-    // Store dataset entry
-    this.dataset.push({
-      templateHash: versionData.templateHash,
-      variables: versionData.variables,
-      output: outputText,
-      timestamp: new Date()
-    });
-    
-    const template = this.templateBank.get(versionData.templateHash)!;
-    
-    return {
-      ...response,
-      _pvMeta: {
-        modelVersion: template.modelVersion,
-        templateHash: versionData.templateHash,
-        variables: versionData.variables,
-        template: template.rawTemplate,
-        usage
-      }
-    };
-  }
-
-  exportDataset(options: {
-    templateHash?: string;
-    format?: 'jsonl' | 'csv';
-  } = {}) {
-    let entries = this.dataset;
-    
-    if (options.templateHash) {
-      entries = entries.filter(e => e.templateHash === options.templateHash);
-    }
-    
-    return entries.map(entry => ({
-      template_hash: entry.templateHash,
-      template: this.templateBank.get(entry.templateHash)!.rawTemplate,
-      variables: entry.variables,
-      output: entry.output,
-      timestamp: entry.timestamp.toISOString()
-    }));
-  }
-
-  getTemplateStats() {
-    return Array.from(this.templateBank.entries()).map(([hash, entry]) => ({
-      hash,
-      template: entry.rawTemplate,
-      variables: entry.variables,
-      modelVersion: entry.modelVersion,
-      firstSeen: entry.firstSeen,
-      exampleCount: entry.examples.length
-    }));
-  }
-
-  async createFineTuneJob(templateHash: string) {
-    const template = this.templateBank.get(templateHash);
-    if (!template) throw new Error('Template not found');
-
-    const dataset = this.exportDataset({ templateHash });
-    
-    // Format data for fine-tuning
-    const trainingData = dataset.map(entry => ({
-      prompt: this.replaceVariables(template.rawTemplate, entry.variables),
-      completion: entry.output
-    }));
-
-    // Here you would implement the actual fine-tuning job creation
-    // using OpenAI's fine-tuning API
-    return {
-      modelVersion: template.modelVersion,
-      trainingExamples: trainingData.length,
-      template: template.rawTemplate
-    };
-  }
-
-  async createFineTuningJob(params: OpenAI.FineTuningJobCreateParams) {
+  async createFineTuningJob(params: OpenAI.FineTuning.JobCreateParams) {
     return this.openaiClient.fineTuning.jobs.create(params);
   }
 
-  async listFineTuningJobs(params?: OpenAI.FineTuningJobListParams) {
+  async listFineTuningJobs(params?: OpenAI.FineTuning.JobListParams) {
     return this.openaiClient.fineTuning.jobs.list(params);
   }
 
@@ -566,7 +504,7 @@ export class DistilAI {
     return this.openaiClient.fineTuning.jobs.cancel(jobId);
   }
 
-  async listFineTuningEvents(jobId: string, params?: OpenAI.FineTuningJobListEventsParams) {
+  async listFineTuningEvents(jobId: string, params?: OpenAI.FineTuning.JobListEventsParams) {
     return this.openaiClient.fineTuning.jobs.listEvents(jobId, params);
   }
 
@@ -575,7 +513,7 @@ export class DistilAI {
   }
 
   async deleteFile(fileId: string) {
-    return this.openaiClient.files.delete(fileId);
+    return this.openaiClient.files.del(fileId);
   }
 
   async retrieveFile(fileId: string) {
@@ -593,20 +531,29 @@ export class DistilAI {
     const dataset = this.exportDataset({ templateHash });
     
     // Format data for fine-tuning
-    const trainingData = dataset.map(entry => ({
+    const trainingData = dataset.map((entry: DatasetEntry) => ({
       messages: [
         { role: 'user', content: this.replaceVariables(template.rawTemplate, entry.variables) },
         { role: 'assistant', content: entry.output }
       ]
-    }));
+    })) as TrainingDataEntry[];
+
+    // Validate training data
+    for (const data of trainingData) {
+      if (data.messages.length !== 2) {
+        throw new Error('Training data entry must contain exactly 2 messages');
+      }
+    }
 
     // Create JSONL file content
-    const jsonlContent = trainingData.map(data => JSON.stringify(data)).join('\n');
+    const jsonlContent = trainingData
+      .map((data: TrainingDataEntry) => JSON.stringify(data))
+      .join('\n');
     const buffer = Buffer.from(jsonlContent, 'utf-8');
 
     // Upload training file
     const file = await this.createFile({
-      file: buffer,
+      file: new File([buffer], 'training-data.jsonl', { type: 'application/jsonl' }),
       purpose: 'fine-tune'
     });
 
@@ -634,6 +581,25 @@ export class DistilAI {
       result = result.replace(`{${key}}`, value);
     });
     return result;
+  }
+
+  private exportDataset(options: {
+    templateHash?: string;
+    format?: 'jsonl' | 'csv';
+  } = {}): DatasetEntry[] {
+    let entries = this.dataset;
+    
+    if (options.templateHash) {
+      entries = entries.filter(e => e.templateHash === options.templateHash);
+    }
+    
+    return entries.map(entry => ({
+      templateHash: entry.templateHash,
+      template: this.templateBank.get(entry.templateHash)!.rawTemplate,
+      variables: entry.variables,
+      output: entry.output,
+      timestamp: new Date(entry.timestamp)
+    }));
   }
 
   async getUsageStats(filter?: {
