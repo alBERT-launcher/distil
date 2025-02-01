@@ -60,9 +60,8 @@ export function postprocess(response: string, extraData?: any): string {
 /**
  * Compute a unique SHA-256 hash based on the systemPrompt, userPrompt, and sorted parameter keys.
  */
-export function computeTemplateHash(input: LLMInput): string {
+export function computeTemplateHash(input: any): string {
   const hash = crypto.createHash("sha256");
-  const paramKeys = input.parameters ? Object.keys(input.parameters).sort() : [];
-  hash.update(input.systemPrompt + input.userPrompt + paramKeys.join(","));
+  hash.update(input.systemPrompt + input.userPrompt);
   return hash.digest("hex");
 }

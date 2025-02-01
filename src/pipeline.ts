@@ -62,26 +62,16 @@ export class DistilPipeline {
       // Set required fields from pipeline config, ensuring they can't be overridden
       const input = {
         ...inputData,  // First, take all fields from inputData
-        modelName: this.modelName,         // Then, override with pipeline config values
-        systemPrompt: this.systemPrompt,
-        userPrompt: this.userPrompt,
+        modelName: this.modelName,
       };
       
-      
-      this.logger.info("Validating input..." + JSON.stringify(input));
-      let validInput = validateInput(input);
-      
-      // Merge default parameters.
-      if (this.defaultParameters) {
-        validInput.parameters = { ...this.defaultParameters, ...validInput.parameters };
-      }
-      await this.logger.info("Input validated.");
+      // Compute template hash from raw templates
+      const templateHash = computeTemplateHash({
+        systemPrompt: this.systemPrompt,
+        userPrompt: this.userPrompt
+      });
 
-      // Run preprocessing.
-      validInput = await this.preprocessFn(validInput);
-
-      // Compute template version hash.
-      const templateHash = computeTemplateHash(validInput);
+      // Record pipeline version if new
       if (!pipelineVersionStore[templateHash]) {
         pipelineVersionStore[templateHash] = {
           id: templateHash,
@@ -89,7 +79,7 @@ export class DistilPipeline {
           template: {
             systemPrompt: this.systemPrompt,
             userPrompt: this.userPrompt,
-            parameterKeys: validInput.parameters ? Object.keys(validInput.parameters).sort() : []
+            parameterKeys: Object.keys(this.defaultParameters || {}).sort()
           },
           tags: [],
           createdAt: new Date().toISOString()
@@ -97,10 +87,39 @@ export class DistilPipeline {
         await this.logger.info(`New pipeline version recorded with hash: ${templateHash}`);
       }
 
+      // Merge default parameters first
+      const parameters = {
+        ...(this.defaultParameters || {}),
+        ...(inputData.parameters || {})
+      };
+
+      // Apply parameter substitution to prompt templates
+      const systemPrompt = Object.entries(parameters).reduce(
+        (prompt, [key, value]) => prompt.replace(`{${key}}`, String(value)),
+        this.systemPrompt
+      );
+      
+      const userPrompt = Object.entries(parameters).reduce(
+        (prompt, [key, value]) => prompt.replace(`{${key}}`, String(value)),
+        this.userPrompt
+      );
+
+      // Add processed prompts to input
+      input.systemPrompt = systemPrompt;
+      input.userPrompt = userPrompt;
+      input.parameters = parameters;
+      input.templateHash = templateHash;
+      
+      this.logger.info("Validating input..." + JSON.stringify(input));
+      let validInput = validateInput(input);
+      await this.logger.info("Input validated.");
+
+      // Run preprocessing.
+      validInput = await this.preprocessFn(validInput);
+
       // Run inference.
       const { detail, rawOutput, cost } = await this.inferenceEngine.callInference({
         ...validInput,
-        templateHash,
         originalInput: inputData
       });
       totalCost += cost;
