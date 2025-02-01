@@ -179,7 +179,7 @@ async function run() {
 }
 
 run().catch(console.error);
-
+```
 ## Rating & Fine-tuning
 
 Want to level up your components? Distil lets you rate and collect high-quality examples for fine-tuning:
