@@ -2,23 +2,24 @@
 
 /**
  * Generic input for a Distil pipeline.
- * - modelName: Name of the pipeline.
- * - systemPrompt & userPrompt: Template strings for the prompt.
- * - parameters: Input parameters that fill placeholders in the prompt.
- * - extraData: Optional extra information.
+ * - modelName: Name of the model to use
+ * - systemPrompt & userPrompt: Template strings for the prompt
+ * - parameters: Input parameters that fill placeholders in the prompt
+ * - extraData: Optional extra information
+ * - pipelineName: Name of the pipeline (used as ES index)
+ * - templateHash: Computed hash for version tracking
+ * - originalInput: Raw input before preprocessing
  */
-// src/types.ts
-
 export interface LLMInput {
   modelName: string;
   systemPrompt: string;
   userPrompt: string;
   parameters?: Record<string, any>;
   extraData?: any;
-  // New fields
-  templateHash?: string;       // Added template version identifier
-  originalInput?: any;         // Raw input before preprocessing
-  startTime?: number;          // Execution timestamp
+  pipelineName: string;       // Required for ES indexing
+  templateHash?: string;      // Added during pipeline processing
+  originalInput?: any;        // Raw input before preprocessing
+  startTime?: number;         // Execution timestamp
 }
 
 export interface InferenceResult {

@@ -65,50 +65,35 @@ export class DistilPipeline {
         modelName: this.modelName,
       };
       
-      // Compute template hash from raw templates
-      const templateHash = computeTemplateHash({
-        systemPrompt: this.systemPrompt,
-        userPrompt: this.userPrompt
-      });
-
-      // Record pipeline version if new
-      if (!pipelineVersionStore[templateHash]) {
-        pipelineVersionStore[templateHash] = {
-          id: templateHash,
-          pipelineName: this.pipelineName,
-          template: {
-            systemPrompt: this.systemPrompt,
-            userPrompt: this.userPrompt,
-            parameterKeys: Object.keys(this.defaultParameters || {}).sort()
-          },
-          tags: [],
-          createdAt: new Date().toISOString()
-        };
-        await this.logger.info(`New pipeline version recorded with hash: ${templateHash}`);
-      }
-
       // Merge default parameters first
       const parameters = {
         ...(this.defaultParameters || {}),
         ...(inputData.parameters || {})
       };
 
+      // Helper function to substitute parameters in template strings
+      const substituteParameters = (template: string, params: Record<string, any>): string => {
+        let result = template;
+        for (const [key, value] of Object.entries(params)) {
+          const placeholder = `{${key}}`;
+          // Handle different value types
+          const replacement = typeof value === 'object' 
+            ? JSON.stringify(value)
+            : String(value);
+          // Use regex to replace all occurrences
+          result = result.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
+        }
+        return result;
+      };
+
       // Apply parameter substitution to prompt templates
-      const systemPrompt = Object.entries(parameters).reduce(
-        (prompt, [key, value]) => prompt.replace(`{${key}}`, String(value)),
-        this.systemPrompt
-      );
-      
-      const userPrompt = Object.entries(parameters).reduce(
-        (prompt, [key, value]) => prompt.replace(`{${key}}`, String(value)),
-        this.userPrompt
-      );
+      const systemPrompt = substituteParameters(this.systemPrompt, parameters);
+      const userPrompt = substituteParameters(this.userPrompt, parameters);
 
       // Add processed prompts to input
       input.systemPrompt = systemPrompt;
       input.userPrompt = userPrompt;
       input.parameters = parameters;
-      input.templateHash = templateHash;
       
       this.logger.info("Validating input..." + JSON.stringify(input));
       let validInput = validateInput(input);
@@ -117,10 +102,29 @@ export class DistilPipeline {
       // Run preprocessing.
       validInput = await this.preprocessFn(validInput);
 
+      // Compute template version hash.
+      const templateHash = computeTemplateHash(validInput);
+      if (!pipelineVersionStore[templateHash]) {
+        pipelineVersionStore[templateHash] = {
+          id: templateHash,
+          pipelineName: this.pipelineName,
+          template: {
+            systemPrompt: this.systemPrompt,
+            userPrompt: this.userPrompt,
+            parameterKeys: validInput.parameters ? Object.keys(validInput.parameters).sort() : []
+          },
+          tags: [],
+          createdAt: new Date().toISOString()
+        };
+        await this.logger.info(`New pipeline version recorded with hash: ${templateHash}`);
+      }
+
       // Run inference.
       const { detail, rawOutput, cost } = await this.inferenceEngine.callInference({
         ...validInput,
-        originalInput: inputData
+        templateHash,
+        originalInput: inputData,
+        pipelineName: this.pipelineName
       });
       totalCost += cost;
       const processedOutput = await this.postprocessFn(rawOutput, validInput.extraData);

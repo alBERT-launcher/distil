@@ -56,21 +56,18 @@ export class InferenceEngine {
 
     // Store completion data
     await this.esClient.index({
-      index: config.elastic.dataIndex,
+      index: input.pipelineName.toLowerCase(), // Use pipeline name as index name
       body: {
         timestamp: new Date().toISOString(),
+        pipelineName: input.pipelineName,
         pipelineHash: input.templateHash,
         input: {
           raw: input.originalInput,
           preprocessed: {
-            systemPrompt: input.systemPrompt,  // This is now the parameterized version
-            userPrompt: input.userPrompt,      // This is now the parameterized version
+            systemPrompt: input.systemPrompt,
+            userPrompt: input.userPrompt,
             parameters: input.parameters
           }
-        },
-        parameterizedPrompts: {
-          systemPrompt: input.systemPrompt,
-          userPrompt: input.userPrompt
         },
         output: rawOutput,
         cost,
