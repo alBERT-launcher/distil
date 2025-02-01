@@ -315,28 +315,64 @@ const after = await openai.chat.completions.create({
 // - Same or better quality output
 ```
 
-## Configuration (if you must)
+## Configuration
 
-```typescript
-const ai = new Distil({
-  openaiConfig: {
-    apiKey: process.env.OPENAI_API_KEY
-  },
-  storage: {
-    type: 'supabase',  // for the fancy folks
-    options: {
-      // your credentials here
-    }
-  },
-  // Set to false if your boss is watching
-  autoFineTune: true,
-  // For when you're feeling generous
-  marketplace: {
-    publish: true,
-    price: 0.0001  // per token, we're not greedy
-  }
-});
-```
+### Elasticsearch Setup
+1. **Install Elasticsearch**
+   ```bash
+   docker run -d --name elasticsearch -p 9200:9200 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.7.0
+   ```
+2. **Create API Key**
+   ```bash
+   curl -X POST "localhost:9200/_security/api_key" -H "Content-Type: application/json" -d'
+   {
+     "name": "distil-api-key"
+   }'
+   ```
+3. **Configure in code**
+   ```typescript
+   const storageConfig: StorageConfig = {
+     type: 'elasticsearch',
+     options: {
+       elasticUrl: process.env.ELASTIC_URL,
+       elasticApiKey: process.env.ELASTIC_API_KEY,
+       elasticIndex: 'prompt-logs'
+     }
+   };
+   ```
+
+### Supabase Setup
+1. **Create New Project**
+   - Go to [Supabase Dashboard](https://app.supabase.com)
+   - Click "New Project"
+
+2. **Create Table**
+   ```sql
+   CREATE TABLE prompt_logs (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     timestamp TIMESTAMPTZ NOT NULL,
+     template_hash TEXT,
+     template TEXT,
+     variables JSONB,
+     prompt TEXT,
+     completion TEXT,
+     model TEXT,
+     usage JSONB,
+     tool_calls TEXT
+   );
+   ```
+
+3. **Configure in code**
+   ```typescript
+   const storageConfig: StorageConfig = {
+     type: 'supabase',
+     options: {
+       supabaseUrl: process.env.SUPABASE_URL,
+       supabaseKey: process.env.SUPABASE_KEY,
+       supabaseTable: 'prompt-logs'
+     }
+   };
+   ```
 
 ## Storage Options
 
