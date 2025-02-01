@@ -90,9 +90,15 @@ export class JsonStorageAdapter implements StorageAdapter {
   }
 
   async logPrompt(log: PromptLog): Promise<void> {
-    const logs = await this.getPromptLogs();
-    logs.push(log);
-    await fs.writeFile(this.fullPath, JSON.stringify(logs, null, 2));
+    try {
+      await this.initialize();
+      const logs = await this.getPromptLogs();
+      logs.push(log);
+      await fs.writeFile(this.fullPath, JSON.stringify(logs, null, 2));
+    } catch (error) {
+      console.error('Failed to write prompt log:', error);
+      throw new Error('Failed to persist log entry');
+    }
   }
 
   async getPromptLogs(filter?: {
@@ -101,20 +107,31 @@ export class JsonStorageAdapter implements StorageAdapter {
     toDate?: Date;
     model?: string;
   }): Promise<PromptLog[]> {
-    const content = await fs.readFile(this.fullPath, 'utf-8');
-    let logs: PromptLog[] = JSON.parse(content);
-    
-    if (filter) {
-      logs = logs.filter(log => {
-        if (filter.templateHash && log.templateHash !== filter.templateHash) return false;
-        if (filter.model && log.model !== filter.model) return false;
-        if (filter.fromDate && new Date(log.timestamp) < filter.fromDate) return false;
-        if (filter.toDate && new Date(log.timestamp) > filter.toDate) return false;
-        return true;
-      });
+    try {
+      await this.initialize();
+      const content = await fs.readFile(this.fullPath, 'utf-8');
+      
+      if (!content.trim()) {
+        return [];
+      }
+
+      let logs: PromptLog[] = JSON.parse(content);
+      
+      if (filter) {
+        logs = logs.filter(log => {
+          if (filter.templateHash && log.templateHash !== filter.templateHash) return false;
+          if (filter.model && log.model !== filter.model) return false;
+          if (filter.fromDate && new Date(log.timestamp) < filter.fromDate) return false;
+          if (filter.toDate && new Date(log.timestamp) > filter.toDate) return false;
+          return true;
+        });
+      }
+      
+      return logs;
+    } catch (error) {
+      console.error('Failed to read prompt logs:', error);
+      return [];
     }
-    
-    return logs;
   }
 }
 
