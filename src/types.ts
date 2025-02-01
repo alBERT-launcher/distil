@@ -24,7 +24,6 @@ export interface LLMInput {
 export interface InferenceResult {
   detail: string;
   rawOutput: string;
-  processedOutput: string;  // Added postprocessed output
   cost: number;
   retryCount?: number;      // From retry utility
 }
@@ -40,6 +39,15 @@ export interface GenerationResult {
   };
 }
 
+export interface PipelineExecutionResult {
+  processedOutput: string;  // Final output after postprocessing
+  executionStats?: {
+    averageTime: number;
+    totalRuns: number;
+    successRate: number;
+  };
+}
+
 export interface PipelineVersionRecord {
   id: string;
   pipelineName: string;
@@ -52,11 +60,4 @@ export interface PipelineVersionRecord {
   rating?: number;
   isFinetuned?: boolean;
   createdAt: string;
-  // New fields
-  processedOutput?: string; // Final output after postprocessing
-  executionStats?: {
-    averageTime: number;
-    totalRuns: number;
-    successRate: number;
-  };
 }

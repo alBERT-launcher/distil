@@ -68,6 +68,10 @@ export class InferenceEngine {
         metadata: input.extraData
       }
     });
-    return { detail, rawOutput, cost };
+    return { 
+      detail, 
+      rawOutput, 
+      cost
+    };
   }
 }

@@ -107,15 +107,14 @@ export class DistilPipeline {
       const processedOutput = await this.postprocessFn(rawOutput, validInput.extraData);
       const timeTaken = (Date.now() - startTime) / 1000;
 
-      pipelineVersionStore[templateHash].processedOutput = processedOutput;
-
       return {
         processedOutput,
         metadata: { 
           generationCost: totalCost, 
           timeTaken,
           input: validInput,
-          rawOutput // Expose raw output for completeness
+          rawOutput,
+          templateHash
         }
       };
     } catch (error: any) {
