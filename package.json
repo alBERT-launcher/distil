@@ -1,6 +1,6 @@
 {
     "name": "@lewist9x/distil",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "An opinionated library for managing LLM pipelines. Define, track, rate, and curate prompt–completion pairs for fine-tuning.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
