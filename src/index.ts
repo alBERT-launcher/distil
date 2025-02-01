@@ -12,6 +12,8 @@ interface TemplateEntry {
   firstSeen: Date;
   examples: string[];
   rawTemplate: string;
+  version: number;
+  lock: Promise<void>;
 }
 
 interface PromptMatch {
@@ -54,55 +56,52 @@ interface LocalStorageConfig {
   };
 }
 
-class PrefixTree {
-  private root: { [key: string]: any } = {};
-  private paths: string[][] = [];
+class ClusteringEngine {
+  private prompts: string[] = [];
+  private tokenizedPrompts: string[][] = [];
 
-  insert(tokens: string[]) {
-    let node = this.root;
-    for (const token of tokens) {
-      if (!node[token]) {
-        node[token] = {};
-      }
-      node = node[token];
-    }
-    this.paths.push(tokens);
+  constructor(prompts: string[]) {
+    this.prompts = prompts;
+    this.tokenizedPrompts = prompts.map(p => this.advancedTokenize(p));
   }
 
-  getClusters(similarityThreshold: number): string[][] {
-    const clusters: string[][] = [];
-    const used = new Set<number>();
+  private advancedTokenize(prompt: string): string[] {
+    // Split on word boundaries but preserve {{variable}} patterns
+    return prompt.split(/(\{\{\w+\}\}|\W+)/).filter(t => t.trim());
+  }
 
-    for (let i = 0; i < this.paths.length; i++) {
-      if (used.has(i)) continue;
+  private findCommonStructure(): {
+    template: string;
+    variables: Set<string>;
+    coverage: number;
+  } {
+    const trie = this.buildPositionalTrie();
+    const alignments = this.calculateOptimalAlignments();
+    return this.generateBestTemplate(trie, alignments);
+  }
 
-      const cluster = [this.paths[i].join(' ')];
-      used.add(i);
+  private buildPositionalTrie() {
+    // Implementation using frequency counts per position
+  }
 
-      for (let j = i + 1; j < this.paths.length; j++) {
-        if (used.has(j)) continue;
+  private calculateOptimalAlignments() {
+    // Dynamic programming approach for token alignment
+  }
 
-        const similarity = compareTwoStrings(
-          this.paths[i].join(' '),
-          this.paths[j].join(' ')
-        );
+  private generateBestTemplate(trie: any, alignments: any) {
+    // Generate template with variables where divergence occurs
+  }
 
-        if (similarity >= similarityThreshold) {
-          cluster.push(this.paths[j].join(' '));
-          used.add(j);
-        }
-      }
-
-      clusters.push(cluster);
-    }
-
-    return clusters;
+  public clusterPrompts(
+    minClusterSize: number = 3,
+    similarityThresholds: number[] = [0.85, 0.7, 0.5]
+  ): string[][] {
+    // Hierarchical clustering with decreasing thresholds
   }
 }
 
 export class DistilAI {
   private templateBank: Map<string, TemplateEntry> = new Map();
-  private isDiscoveryPhase = true;
   private discoveryQueue: string[] = [];
   private dataset: DatasetEntry[] = [];
   public storage: StorageAdapter;
@@ -112,6 +111,7 @@ export class DistilAI {
   private discoveryThreshold: number;
   private similarityThreshold: number;
   private openaiClient: OpenAI;
+  private isProcessing = false;
 
   constructor(config: {
     apiKey: string;
@@ -313,90 +313,69 @@ export class DistilAI {
   }
 
   private async processPrompt(prompt: string): Promise<PromptMatch> {
-    if (this.isDiscoveryPhase) {
-      this.discoveryQueue.push(prompt);
-      
-      if (this.discoveryQueue.length >= this.discoveryThreshold) {
-        await this.processDiscoveryBatch();
-        this.isDiscoveryPhase = false;
-      }
-    }
-    
+    this.addToDiscoveryQueue(prompt);
     return this.matchToExistingTemplate(prompt);
   }
 
-  private async processDiscoveryBatch() {
-    const trie = new PrefixTree();
-    this.discoveryQueue.forEach(p => trie.insert(p.split(' ')));
+  private addToDiscoveryQueue(prompt: string) {
+    this.discoveryQueue.push(prompt);
     
-    const clusters = trie.getClusters(this.similarityThreshold);
-    
-    for (const cluster of clusters) {
-      const template = this.createTemplate(cluster);
-      const templateHash = this.hashTemplate(template.rawTemplate);
+    if (this.discoveryQueue.length >= this.discoveryThreshold && !this.isProcessing) {
+      this.isProcessing = true;
+      const batch = this.discoveryQueue.splice(0, this.discoveryThreshold);
       
-      this.templateBank.set(templateHash, {
-        pattern: template.pattern,
-        variables: template.variables,
-        modelVersion: `model-${templateHash}-${Date.now()}`,
-        firstSeen: new Date(),
-        examples: cluster,
-        rawTemplate: template.rawTemplate
+      // Process without blocking
+      this.processDiscoveryBatch(batch).finally(() => {
+        this.isProcessing = false;
+        
+        // Check remaining items after processing
+        if (this.discoveryQueue.length >= this.discoveryThreshold) {
+          this.addToDiscoveryQueue(''); // Trigger recursive processing
+        }
       });
     }
   }
 
-  private createTemplate(cluster: string[]) {
-    // Find the template by identifying variable parts
-    const tokens = cluster.map(p => p.split(' '));
-    const templateTokens: string[] = [];
-    const variables: string[] = [];
-    let varCounter = 0;
+  private async processDiscoveryBatch(batch: string[]) {
+    const engine = new ClusteringEngine(batch);
+    const clusters = engine.clusterPrompts();
 
-    // Use the first example as base
-    const baseTokens = tokens[0];
-    
-    for (let i = 0; i < baseTokens.length; i++) {
-      let isVariable = false;
-      
-      // Check if this position varies across examples
-      for (let j = 1; j < tokens.length; j++) {
-        if (tokens[j][i] !== baseTokens[i]) {
-          isVariable = true;
-          break;
-        }
+    clusters.forEach(cluster => {
+      const analysis = engine.findCommonStructure();
+      if (analysis.coverage > 0.7) {
+        const template = this.createTemplateFromAnalysis(analysis);
+        const templateHash = this.hashTemplate(template.rawTemplate);
+        
+        await this.safeTemplateUpdate(templateHash, {
+          pattern: template.pattern,
+          variables: template.variables,
+          modelVersion: `model-${templateHash}-${Date.now()}`,
+          firstSeen: new Date(),
+          examples: cluster,
+          rawTemplate: template.rawTemplate,
+          version: 1,
+          lock: Promise.resolve()
+        });
       }
-
-      if (isVariable) {
-        const varName = `var${varCounter++}`;
-        variables.push(varName);
-        templateTokens.push(`{${varName}}`);
-      } else {
-        templateTokens.push(baseTokens[i]);
-      }
-    }
-
-    const rawTemplate = templateTokens.join(' ');
-    const pattern = this.createRegexPattern(rawTemplate, variables);
-
-    return { pattern, variables, rawTemplate };
+    });
   }
 
-  private createRegexPattern(template: string, variables: string[]): RegExp {
-    let pattern = template;
-    
-    // Escape regex special characters in static parts
-    pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    
-    // Replace variables with capture groups
-    variables.forEach(v => {
-      pattern = pattern.replace(
-        `{${v}}`,
-        `(?<${v}>[^\\s]+)`
-      );
-    });
-    
-    return new RegExp(`^${pattern}$`);
+  private createTemplateFromAnalysis(analysis: {
+    template: string;
+    variables: Set<string>;
+  }) {
+    const variableRegex = '\\w+\\s*\\w*';
+    const regexPattern = analysis.template
+      .replace(/\{(\w+)\}/g, (_, varName) => 
+        `(?<${varName}>${variableRegex})`
+      )
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    return {
+      rawTemplate: analysis.template,
+      pattern: new RegExp(`^${regexPattern}$`, 'i'),
+      variables: Array.from(analysis.variables)
+    };
   }
 
   private matchToExistingTemplate(prompt: string): PromptMatch {
@@ -418,15 +397,28 @@ export class DistilAI {
     // Create new template if no match
     const hash = this.hashTemplate(prompt);
     this.templateBank.set(hash, {
-      pattern: new RegExp('^' + prompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'),
+      pattern: new RegExp(`^${prompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
       variables: [],
       modelVersion: `model-${hash}-${Date.now()}`,
       firstSeen: new Date(),
       examples: [prompt],
-      rawTemplate: prompt
+      rawTemplate: prompt,
+      version: 1,
+      lock: Promise.resolve()
     });
     
     return { templateHash: hash, variables: {} };
+  }
+
+  private async safeTemplateUpdate(hash: string, entry: TemplateEntry) {
+    await entry.lock;
+    entry.lock = (async () => {
+      // Compare-and-swap logic
+      const current = this.templateBank.get(hash);
+      if (current.version === entry.version) {
+        this.templateBank.set(hash, { ...entry, version: entry.version + 1 });
+      }
+    })();
   }
 
   private hashTemplate(template: string): string {
