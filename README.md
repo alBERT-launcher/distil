@@ -1,4 +1,3 @@
-
 # Distil
 
 [![npm version](https://badge.fury.io/js/distil.svg)](https://npmjs.com/package/distil)  
@@ -29,6 +28,51 @@ Install via npm:
 ```bash
 npm install distil
 ```
+
+## Configuration
+
+Distil uses environment variables for configuration. Create a `.env` file in your project root:
+
+```bash
+# Copy the example environment file
+cp example.env .env
+```
+
+### Available Configuration Options
+
+1. **Elasticsearch Configuration:**
+   ```env
+   ELASTICHOST=http://localhost:9200  # Elasticsearch host URL
+   ELASTICUSER=elastic                # Elasticsearch username
+   ELASTICPW=changeme                 # Elasticsearch password
+   ```
+   The library uses two indices by default:
+   - `distil_data`: Stores pipeline versions and metadata
+   - `distil_logs`: Stores execution logs
+
+2. **OpenRouter/LLM Configuration:**
+   ```env
+   OPENROUTER_APIKEY=your_api_key_here           # Your OpenRouter API key
+   OPENLLM_BASE_URL=https://openrouter.ai/api/v1 # OpenRouter base URL
+   ```
+   Default cost per token is set to 4.5/10M tokens.
+
+3. **Dashboard Configuration:**
+   ```env
+   DASHBOARD_PORT=3000    # Port for the dashboard server
+   RUN_DASHBOARD=true     # Enable/disable dashboard
+   ```
+
+4. **Retry Configuration:**
+   The library includes built-in retry logic with these defaults:
+   - 3 retry attempts
+   - 1000ms delay between retries
+
+### Configuration Priority
+
+1. Environment variables take highest priority
+2. Values in `.env` file
+3. Default values from the configuration
 
 ## Quick Start Example
 
@@ -120,7 +164,6 @@ export const CustomCard = ({ children }) => <div className="custom-card">{childr
 }
 
 runExample().catch(console.error);
-```
 
 ## Dashboard & Curation
 
@@ -155,6 +198,46 @@ Distil includes an Express-based dashboard to help you review and curate your ou
 - **Developer Friendly:**  
   A modular, easy-to-use codebase that integrates seamlessly into your existing projects.
 
+## Elasticsearch Setup
+
+Distil includes a Docker Compose configuration for setting up Elasticsearch, which can be used for efficient storage and search of your pipeline versions:
+
+1. **Start Elasticsearch:**
+   ```bash
+   docker-compose up -d elasticsearch
+   ```
+
+2. **Verify Installation:**
+   ```bash
+   curl http://localhost:9200
+   ```
+
+The Docker Compose configuration includes:
+- Single-node Elasticsearch cluster
+- Security features disabled for development
+- Memory limits set to 512MB
+- Persistent volume for data storage
+- Exposed on port 9200
+
+You can customize the configuration by editing the `docker-compose.yml` file:
+```yaml
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+```
+
+For production environments, make sure to:
+- Enable security features
+- Configure appropriate memory limits
+- Set up proper authentication
+- Use multiple nodes for high availability
 
 ## Summary
 
