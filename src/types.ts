@@ -7,50 +7,56 @@
  * - parameters: Input parameters that fill placeholders in the prompt.
  * - extraData: Optional extra information.
  */
+// src/types.ts
+
 export interface LLMInput {
-    modelName: string;
+  modelName: string;
+  systemPrompt: string;
+  userPrompt: string;
+  parameters?: Record<string, any>;
+  extraData?: any;
+  // New fields
+  templateHash?: string;       // Added template version identifier
+  originalInput?: any;         // Raw input before preprocessing
+  startTime?: number;          // Execution timestamp
+}
+
+export interface InferenceResult {
+  detail: string;
+  rawOutput: string;
+  processedOutput: string;  // Added postprocessed output
+  cost: number;
+  retryCount?: number;      // From retry utility
+}
+
+export interface GenerationResult {
+  processedOutput: string;
+  metadata: {
+    generationCost: number;
+    timeTaken: number;
+    input: LLMInput;
+    rawOutput: string;      // Added raw model output
+    templateHash: string;   // Version identifier
+  };
+}
+
+export interface PipelineVersionRecord {
+  id: string;
+  pipelineName: string;
+  template: {
     systemPrompt: string;
     userPrompt: string;
-    parameters?: Record<string, any>;
-    extraData?: any;
-  }
-  
-  /**
-   * Result from an inference call.
-   */
-  export interface InferenceResult {
-    detail: string;
-    rawOutput: string;
-    cost: number;
-  }
-  
-  /**
-   * Full result from a generate() call.
-   */
-  export interface GenerationResult {
-    processedOutput: string;
-    metadata: {
-      generationCost: number;
-      timeTaken: number;
-      input: LLMInput;
-    };
-  }
-  
-  /**
-   * Record for tracking pipeline (version) runs.
-   * The unique hash is computed from the system prompt, user prompt, and the sorted keys of parameters.
-   */
-  export interface PipelineVersionRecord {
-    id: string; // computed template hash
-    pipelineName: string;
-    template: {
-      systemPrompt: string;
-      userPrompt: string;
-      parameterKeys: string[];
-    };
-    tags: string[];
-    rating?: number;    // from 1-5 stars
-    isFinetuned?: boolean;
-    createdAt: string;
-  }
-  
+    parameterKeys: string[];
+  };
+  tags: string[];
+  rating?: number;
+  isFinetuned?: boolean;
+  createdAt: string;
+  // New fields
+  processedOutput?: string; // Final output after postprocessing
+  executionStats?: {
+    averageTime: number;
+    totalRuns: number;
+    successRate: number;
+  };
+}

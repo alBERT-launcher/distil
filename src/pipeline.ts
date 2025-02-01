@@ -98,14 +98,25 @@ export class DistilPipeline {
       }
 
       // Run inference.
-      const { detail, rawOutput, cost } = await this.inferenceEngine.callInference(validInput);
+      const { detail, rawOutput, cost } = await this.inferenceEngine.callInference({
+        ...validInput,
+        templateHash,
+        originalInput: inputData
+      });
       totalCost += cost;
       const processedOutput = await this.postprocessFn(rawOutput, validInput.extraData);
       const timeTaken = (Date.now() - startTime) / 1000;
 
+      pipelineVersionStore[templateHash].processedOutput = processedOutput;
+
       return {
         processedOutput,
-        metadata: { generationCost: totalCost, timeTaken, input: validInput }
+        metadata: { 
+          generationCost: totalCost, 
+          timeTaken,
+          input: validInput,
+          rawOutput // Expose raw output for completeness
+        }
       };
     } catch (error: any) {
       await this.logger.error("Generation error: " + error.message);
