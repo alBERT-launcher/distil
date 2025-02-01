@@ -1,277 +1,416 @@
 # Distil
 
-[![npm version](https://badge.fury.io/js/distil.svg)](https://npmjs.com/package/distil)  
-[![license](https://img.shields.io/npm/l/distil.svg)](https://npmjs.com/package/distil)
+Hey there! Thanks for stopping by Distil – your chill TypeScript buddy for setting up and running LLM inference pipelines without the hassle. Whether you're here to fine-tune prompts or just keep your project organized, Distil makes it easy.
 
-**Distil** is an opinionated library for managing LLM pipelines. It lets you define named pipelines with custom prompt templates, preprocess your inputs (e.g. inject code examples), postprocess outputs (e.g. strip code blocks), and automatically track pipeline versions through a dashboard. With Distil, you can also rate outputs and automatically mark successful generations as finetuned when you export them—ensuring that your high-quality prompt–completion pairs are curated for future fine-tuning.
+## Cool Features
 
-## Key Features
+- **Easy Pipeline Setup:**
+  Define your own pipelines with system prompts, user prompts, and parameters. Each run gets a unique fingerprint so you can always track what's what.
 
-- **Named Pipelines:**  
-  Define a pipeline by providing a name, system prompt, user prompt, and default parameters. These templates are used to compute a unique version hash for tracking.
+- **Custom Pre and Post Processing:**
+  Tweak your inputs before sending them off or smooth out the outputs however you like. It’s flexible enough to let you add your own magic.
 
-- **Custom Preprocessing/Postprocessing:**  
-  Swap in your own functions! For example, preprocess inputs to inject ShadCN component code, or postprocess outputs to remove unwanted TSX codeblocks.
+- **Logging & Tracking:**
+  Every pipeline run is logged with details like cost and runtime, so you can keep an eye on performance without breaking a sweat.
 
-- **Version Tracking & Curation:**  
-  Every run is automatically versioned (via a template hash), with metadata such as cost and timing stored. Use the built-in dashboard to view, rate, and tag outputs.
+- **Built-in Dashboard:**
+  Curious about what’s running? The dashboard gives you a simple web interface to view run history, track versions, and check metrics.
 
-- **Automatic Finetuning Marking:**  
-  When you export or trigger fine-tuning via the dashboard, the associated outputs are automatically marked as finetuned so that they are not reused in future training.
+- **Elasticsearch Integration:**
+  Store your pipeline versions and logs in Elasticsearch for easy searching and analysis.
 
-- **Integrated Dashboard:**  
-  An Express-based dashboard API lets you list pipeline versions, add tags, rate them (1–5 stars), and mark them as finetuned—giving you complete visibility into your generation history.
+## Getting Started
 
-## Installation
+### Installation
 
-Install via npm:
-```bash
-npm install distil
-```
-
-## Configuration
-
-Distil uses environment variables for configuration. Create a `.env` file in your project root:
+Just add Distil to your project with npm:
 
 ```bash
-# Copy the example environment file
-cp example.env .env
+npm install @lewist9x/distil
 ```
 
-### Available Configuration Options
+### Setup
 
-1. **Elasticsearch Configuration:**
-   ```env
-   ELASTICHOST=http://localhost:9200  # Elasticsearch host URL
-   ELASTICUSER=elastic                # Elasticsearch username
-   ELASTICPW=changeme                 # Elasticsearch password
-   ```
-   The library uses two indices by default:
-   - `distil_data`: Stores pipeline versions and metadata
-   - `distil_logs`: Stores execution logs
+Create a `.env` file in your project root and fill it in like this:
 
-2. **OpenRouter/LLM Configuration:**
-   ```env
-   OPENROUTER_APIKEY=your_api_key_here           # Your OpenRouter API key
-   OPENLLM_BASE_URL=https://openrouter.ai/api/v1 # OpenRouter base URL
-   ```
-   Default cost per token is set to 4.5/10M tokens.
+```env
+# Elasticsearch config
+ELASTICHOST=http://localhost:9200
+ELASTICUSER=elastic
+ELASTICPW=changeme
 
-3. **Dashboard Configuration:**
-   ```env
-   DASHBOARD_PORT=3000    # Port for the dashboard server
-   RUN_DASHBOARD=true     # Enable/disable dashboard
-   ```
+# LLM API config
+OPENROUTER_APIKEY=your_api_key_here
+OPENLLM_BASE_URL=https://openrouter.ai/api/v1
 
-4. **Retry Configuration:**
-   The library includes built-in retry logic with these defaults:
-   - 3 retry attempts
-   - 1000ms delay between retries
+# Dashboard settings
+DASHBOARD_PORT=3000
+RUN_DASHBOARD=true
 
-### Configuration Priority
+# Retry Configuration (optional)
+RETRY_ATTEMPTS=3    # Number of retries (default: 3)
+RETRY_DELAY=1000   # Delay between retries in ms (default: 1000)
 
-1. Environment variables take highest priority
-2. Values in `.env` file
-3. Default values from the configuration
+# Elasticsearch Indices (optional)
+ES_DATA_INDEX=distil_data  # Store pipeline versions (default: distil_data)
+ES_LOG_INDEX=distil_logs   # Store execution logs (default: distil_logs)
+```
 
-## Quick Start Example
+## Quick Example
 
-Below is an example that generates a comprehensive ShadCN React component. The preprocessing step injects component code examples, and the postprocessing step removes TSX code blocks from the output.
+Here's a complete RAG example for ShadCN component generation:
 
 ```typescript
-import { DistilPipeline } from "distil";
+import { DistilPipeline } from "@lewist9x/distil";
 
-// Custom preprocessing: log input and inject default code if missing.
-const customPreprocess = async (input) => {
-  console.log("Preprocessing: Adjusting input for ShadCN component generation.");
-  if (!input.parameters?.primaryComponentCode) {
+// Define custom preprocessing to inject ShadCN component examples
+const preprocess = (input) => {
+  console.log("Injecting ShadCN component examples...");
+  // Add example components if not provided
+  if (!input.parameters?.components) {
     input.parameters = {
       ...input.parameters,
-      primaryComponentCode: "// Fallback default ShadCN Button code..."
-    };
+      components: {
+        button: `\`\`\`tsx
+import * as React from "react"
+import { Button } from "@/components/ui/button"
+ 
+export function ButtonDemo() {
+  return (
+    <Button variant="outline">Button</Button>
+  )
+}
+\`\`\``,
+        card: `\`\`\`tsx
+import * as React from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+ 
+export function CardDemo() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Card Title</CardTitle>
+        <CardDescription>Card Description</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p>Card Content</p>
+      </CardContent>
+    </Card>
+  )
+}
+\`\`\``
+      }
+    }
   }
   return input;
 };
 
-// Custom postprocessing: remove TSX code blocks.
-// Replace "```tsx" with "```" and extract the content inside the code block.
-const customPostprocess = async (raw: string, extraData: any) => {
-  const cleaned = raw.replaceAll("```tsx", "```");
+// Extract the component code from the TSX code block
+const postprocess = (output: string) => {
+  console.log("Extracting component code from output...");
+  // Remove TSX language specifier and get the code inside the block
+  const cleaned = output.replaceAll("```tsx", "```");
   const parts = cleaned.split("```");
-  // Return the code inside the code block.
-  return parts[1] || cleaned;
+  // Return the code inside the code block, or the original if no code block found
+  return parts[1]?.trim() || output;
 };
 
+// Set up the pipeline for generating ShadCN components
 const pipeline = new DistilPipeline({
-  pipelineName: "shadcn-react-component-generator",
-  systemPrompt:
-    "You are an expert React developer with deep knowledge of ShadCN UI components. " +
-    "You are provided with a set of component code examples for reference.",
-  userPrompt:
-    "Using the provided code snippets {primaryComponentCode} and {secondaryComponentCode}, " +
-    "generate a brand new, comprehensive React component. Return the result wrapped in a TSX code block.",
+  pipelineName: "shadcn-component-generator",
+  modelName: "gpt-3.5-turbo",
+  systemPrompt: 
+    "You are an expert React developer specializing in ShadCN UI components. " +
+    "You create modern, accessible, and reusable components following best practices.",
+  userPrompt: 
+    "Using these ShadCN component examples as reference:\n\n" +
+    "Button Component:\n{components.button}\n\n" +
+    "Card Component:\n{components.card}\n\n" +
+    "Create a new {componentType} component that {requirements}. " +
+    "Return only the component code wrapped in a TSX code block.",
   defaultParameters: {
-    primaryComponentCode: `
-\`\`\`tsx
-// Example ShadCN Button component
-import React from "react";
-export const Button = () => <button className="btn">Click me</button>;
-\`\`\`
-    `,
-    secondaryComponentCode: `
-\`\`\`tsx
-// Example ShadCN Card component
-import React from "react";
-export const Card = ({ children }) => <div className="card">{children}</div>;
-\`\`\`
-    `
+    componentType: "interactive",
+    requirements: "combines Button and Card in an innovative way"
   },
-  preprocess: customPreprocess,
-  postprocess: customPostprocess
+  preprocess,
+  postprocess
 }, "DEBUG");
 
-async function runExample() {
-  const input = {
-    modelName: "ignored", // This is overridden by the pipeline name.
-    systemPrompt: pipeline.systemPrompt,
-    userPrompt: pipeline.userPrompt,
+async function run() {
+  const result = await pipeline.generate({
     parameters: {
-      primaryComponentCode: `
-\`\`\`tsx
-// Custom ShadCN Button component
-import React from "react";
-export const CustomButton = () => <button className="custom-btn">Press me</button>;
-\`\`\`
-      `,
-      secondaryComponentCode: `
-\`\`\`tsx
-// Custom ShadCN Card component
-import React from "react";
-export const CustomCard = ({ children }) => <div className="custom-card">{children}</div>;
-\`\`\`
-      `
-    },
-    extraData: { extra: "Include PropTypes documentation." }
-  };
-
-  const result = await pipeline.generate(input);
+      componentType: "product card",
+      requirements: "displays product info in a card with a purchase button",
+      temperature: 0.7,
+      max_tokens: 2000,
+      top_p: 0.9
+    }
+  });
+  
   if (result) {
-    console.log("Generated Component Output:\n", result.processedOutput);
-    console.log("Metadata:", result.metadata);
-  } else {
-    console.error("No output generated.");
+    console.log("✨ Generated Component Code:");
+    console.log(result.processedOutput);
+    console.log("\n📊 Generation Stats:", {
+      cost: `$${result.metadata.generationCost.toFixed(4)}`,
+      time: `${result.metadata.timeTaken}ms`,
+      version: result.metadata.templateHash
+    });
   }
 }
 
-runExample().catch(console.error);
+run().catch(console.error);
 
-## Dashboard & Curation
+## Rating & Fine-tuning
 
-Distil includes two dashboard options for reviewing and curating your outputs:
+Want to level up your components? Distil lets you rate and collect high-quality examples for fine-tuning:
 
-### 1. Express API Dashboard
+```typescript
+// Rate a generated component (1-5 stars)
+await pipeline.rateGeneration(result.metadata.templateHash, 5, "Perfect component!");
 
-The built-in Express API provides basic endpoints for managing your pipeline versions:
+// Mark it for fine-tuning
+await pipeline.markForFinetuning(result.metadata.templateHash);
 
-1. **Run the Dashboard:**
-   Set the environment variable and start the server:
-   ```bash
-   export RUN_DASHBOARD=true
-   npm run build
-   npm start
-   ```
-   Then open [http://localhost:3000/dashboard/versions](http://localhost:3000/dashboard/versions).
+// Export your best examples
+const examples = await pipeline.exportFinetuningData({
+  minRating: 4,  // Only export highly-rated generations
+  format: "jsonl" // Format suitable for fine-tuning
+});
 
-2. **Available Endpoints:**
-   - `GET /dashboard/versions`: List all pipeline versions
-   - `POST /dashboard/versions/:id/tag`: Add tags to versions
-   - `POST /dashboard/versions/:id/rate`: Rate versions (1-5 stars)
-   - `POST /dashboard/versions/:id/finetune`: Mark versions as finetuned
-
-### 2. Streamlit Dashboard (Recommended)
-
-A full-featured web interface built with Streamlit that provides rich visualization and interaction:
-
-1. **Install Dashboard Dependencies:**
-   ```bash
-   cd dashboard
-   pip install -r requirements.txt
-   ```
-
-2. **Start the Dashboard:**
-   ```bash
-   streamlit run app.py
-   ```
-   Then open [http://localhost:8501](http://localhost:8501)
-
-3. **Features:**
-   - Interactive version browser with expandable details
-   - Rating and tagging interface
-   - Analytics and visualizations
-   - Synthetic data generation
-   - Advanced filtering and search
-
-4. **Dashboard Tabs:**
-   - **Pipeline Versions:** Browse, rate, and tag outputs
-   - **Analytics:** View distributions and trends
-   - **Synthetic Data:** Generate new data from high-quality examples
-
-For more details, see the [dashboard README](dashboard/README.md).
-
-## Why Distil?
-
-- **Customizable & Transparent:**  
-  Easily swap in your own preprocessing and postprocessing, and track every run with versioning and metadata.
-- **Efficient Curation:**  
-  Review, rate, and curate your best prompt–completion pairs using the built-in dashboard.
-- **Automated Finetuning:**  
-  Automatically flag outputs as finetuned on export, preparing high-quality data for your next model updates.
-- **Developer Friendly:**  
-  A modular, easy-to-use codebase that integrates seamlessly into your existing projects.
-
-## Elasticsearch Setup
-
-Distil includes a Docker Compose configuration for setting up Elasticsearch, which can be used for efficient storage and search of your pipeline versions:
-
-1. **Start Elasticsearch:**
-   ```bash
-   docker-compose up -d elasticsearch
-   ```
-
-2. **Verify Installation:**
-   ```bash
-   curl http://localhost:9200
-   ```
-
-The Docker Compose configuration includes:
-- Single-node Elasticsearch cluster
-- Security features disabled for development
-- Memory limits set to 512MB
-- Persistent volume for data storage
-- Exposed on port 9200
-
-You can customize the configuration by editing the `docker-compose.yml` file:
-```yaml
-version: '3.8'
-services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    ports:
-      - "9200:9200"
+console.log("High quality examples:", examples);
 ```
 
-For production environments, make sure to:
-- Enable security features
-- Configure appropriate memory limits
-- Set up proper authentication
-- Use multiple nodes for high availability
+The dashboard makes this even easier! Head to `http://localhost:3000/dashboard` to:
+- 👀 Browse all your generated components
+- ⭐️ Rate them from 1-5 stars
+- 🏷️ Add tags like "production-ready" or "needs-work"
+- 📊 Track which versions perform best
+- 🚀 Export your top-rated examples for fine-tuning
 
-## Summary
+Over time, you'll build up a collection of awesome components that you can use to fine-tune your own model. Each example includes:
+- The preprocessed input (with injected ShadCN examples)
+- The clean, postprocessed output (just the component code)
+- Metadata like ratings, tags, and performance stats
 
-With **Distil**, you have a full-featured solution to define, track, and curate LLM-generated outputs. Customize your pipelines, inject custom processing into your prompts, and use the integrated dashboard to rate and automatically mark your best outputs as finetuned for future training. Replace prompt-engineered models with high-quality finetuned ones seamlessly.
+This creates a feedback loop where your generations get better and better!
 
-Happy building and distilling!
+## Advanced Features
+
+### Logging Levels
+
+Control how chatty Distil is with different logging levels:
+
+```typescript
+const pipeline = new DistilPipeline(config, "DEBUG"); // Super chatty
+const pipeline = new DistilPipeline(config, "INFO");  // Just the important stuff
+const pipeline = new DistilPipeline(config, "WARNING"); // Only warnings
+const pipeline = new DistilPipeline(config, "ERROR"); // Just errors
+```
+
+### Retry Logic
+
+Distil automatically retries failed API calls. Configure it in your `.env`:
+
+```env
+# Retry Configuration (optional)
+RETRY_ATTEMPTS=3    # Number of retries (default: 3)
+RETRY_DELAY=1000   # Delay between retries in ms (default: 1000)
+```
+
+### Pre/Post Processing
+
+Customize how your inputs are processed before they go to the model, and how outputs are cleaned up:
+
+```typescript
+const pipeline = new DistilPipeline({
+  pipelineName: "shadcn-component-generator",
+  // ... other config
+  preprocess: async (input: LLMInput) => {
+    // Add example components to system prompt
+    input.systemPrompt += "\nHere are some example components:\n" + await getExamples();
+    return input;
+  },
+  postprocess: (output: string) => {
+    // Extract just the TSX code
+    const tsxMatch = output.match(/```tsx\n([\s\S]*?)```/);
+    return tsxMatch ? tsxMatch[1].trim() : output;
+  }
+});
+```
+
+### Model Parameters
+
+Fine-tune your model's behavior:
+
+```typescript
+const result = await pipeline.generate({
+  parameters: {
+    // Component-specific parameters
+    componentType: "card",
+    style: "modern",
+    
+    // Model parameters
+    temperature: 0.7,     // Lower = more focused
+    max_tokens: 2000,     // Longer outputs
+    top_p: 0.9,          // Nucleus sampling
+    presence_penalty: 0.5 // Encourage novelty
+  }
+});
+```
+
+### Template Versioning
+
+Each unique combination of prompts and parameters gets a hash:
+
+```typescript
+// These will have the same hash (parameter order doesn't matter)
+const result1 = await pipeline.generate({
+  parameters: { type: "card", style: "modern" }
+});
+
+const result2 = await pipeline.generate({
+  parameters: { style: "modern", type: "card" }
+});
+
+// Different parameters = different hash
+const result3 = await pipeline.generate({
+  parameters: { type: "button", style: "modern" }
+});
+
+// Get all versions using this template
+const versions = await pipeline.getVersionsByHash(result1.metadata.templateHash);
+
+// Compare performance
+console.log(
+  "Template Stats:",
+  await pipeline.getTemplateStats(result1.metadata.templateHash)
+);
+```
+
+This helps you:
+- Track which prompt versions perform best
+- Group similar generations together
+- Compare different parameter combinations
+- Export high-quality examples for fine-tuning
+
+### Cost Tracking
+
+Keep an eye on your spending:
+
+```typescript
+// Set cost per token (default is 4.5/10M tokens)
+process.env.COST_PER_TOKEN = "0.000001";
+
+// Track costs in your generations
+const result = await pipeline.generate({...});
+console.log("Generation cost: $", result.metadata.generationCost);
+
+// Get total costs for a version
+const stats = await pipeline.getVersionStats(result.metadata.templateHash);
+console.log("Total cost: $", stats.totalCost);
+```
+
+### Elasticsearch Integration
+
+All pipeline runs are logged to Elasticsearch for analysis. Configure your indices:
+
+```env
+# Elasticsearch Indices (optional)
+ES_LOG_INDEX=distil_logs   # Store execution logs (default: distil_logs)
+```
+
+Query your logs programmatically:
+
+```typescript
+// Get all logs for a specific version
+const logs = await pipeline.getVersionLogs(result.metadata.templateHash);
+
+// Search for specific patterns in outputs
+const cardExamples = await pipeline.searchVersions({
+  tag: "product-card",
+  minRating: 4
+});
+```
+
+## Error Handling
+
+Distil includes built-in error handling and retries. Here's how to handle common scenarios:
+
+```typescript
+try {
+  const result = await pipeline.generate({
+    parameters: {
+      componentType: "product card"
+    }
+  });
+  
+  if (!result) {
+    console.error("Generation failed - no result returned");
+    return;
+  }
+  
+  console.log("Success!", result.processedOutput);
+} catch (error) {
+  if (error.message.includes("Invalid input")) {
+    // Handle validation errors (missing required fields)
+    console.error("Invalid pipeline input:", error.message);
+  } else if (error.message.includes("API")) {
+    // Handle API errors (rate limits, auth issues)
+    console.error("API error:", error.message);
+  } else {
+    // Handle other errors
+    console.error("Unexpected error:", error);
+  }
+}
+
+// Check retry counts
+const stats = await pipeline.getVersionStats(result.metadata.templateHash);
+if (stats.retryCount > 0) {
+  console.warn(`Required ${stats.retryCount} retries to succeed`);
+}
+
+// Set up error callbacks
+pipeline.on("error", (error) => {
+  // Handle any pipeline errors
+  console.error("Pipeline error:", error);
+});
+
+pipeline.on("retry", (attempt) => {
+  // Handle retry attempts
+  console.warn(`Retry attempt ${attempt}`);
+});
+```
+
+Common error scenarios:
+- Invalid input (missing required fields)
+- API errors (rate limits, authentication)
+- Network issues (handled by retry logic)
+- Preprocessing/postprocessing errors
+- Invalid parameter substitution
+
+The dashboard also shows error rates and retry counts for each pipeline version.
+
+## Dashboard
+
+Want to see your pipelines in action? Start the dashboard like this:
+
+```bash
+export RUN_DASHBOARD=true
+npm start
+```
+
+Then open your browser and head to `http://localhost:3000/dashboard` to check out all the cool metrics and history.
+
+## Development Tips
+
+- Run `npm install` to grab all the dependencies.
+- Build the project with `npm run build`.
+- Keep things in check with `npm test`.
+
+## Contributing
+
+We’re all about making Distil even better. If you have ideas, bug fixes, or improvements, feel free to open a pull request or drop an issue. Every bit helps!
+
+## License
+
+Distil is released under the MIT License – see the LICENSE file for the details.
