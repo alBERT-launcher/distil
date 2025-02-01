@@ -1,6 +1,26 @@
-# Distil
+# Distil 🧪
 
-Hey there! Thanks for stopping by Distil – your chill TypeScript buddy for setting up and running LLM inference pipelines without the hassle. Whether you're here to fine-tune prompts or just keep your project organized, Distil makes it easy.
+Distil is a production-grade TypeScript framework for building, monitoring, and improving LLM pipelines. It provides end-to-end tracing of prompt-completion pairs, integrated curation tools, and automated fine-tuning workflows.
+
+### Current Features
+- 🚀 **Robust Pipelines**: Custom pre/post processing, retry logic, and error handling
+- 📊 **Full Traceability**: Monitor costs, performance, and success rates with Elasticsearch integration
+- 🔄 **Version Control**: Hash-based tracking of prompts and parameters to identify what works best
+- ⭐️ **Curation Tools**: Rate outputs, tag examples, and export for fine-tuning
+- 📈 **Built-in Dashboard**: View pipeline performance, costs, and version history
+
+### Coming Soon 🔥
+- 🤖 **Synthetic Data Generation**: Automatically create high-quality training data using your best examples
+- 🎯 **Fine-tuning Integration**: Seamlessly replace prompt-engineered models with fine-tuned versions
+- 🔍 **Advanced Analytics**: Deep insights into prompt performance and cost optimization
+- 🔐 **Enterprise Features**: Role-based access, audit logs, and persistent storage
+- 🌐 **Multi-Model Support**: Use any LLM provider with our unified interface
+
+Perfect for teams who need to:
+- Build production-ready LLM features
+- Track costs and performance at scale
+- Continuously improve output quality
+- Create proprietary fine-tuned models
 
 ## Cool Features
 
