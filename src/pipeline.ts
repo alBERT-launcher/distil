@@ -14,6 +14,7 @@ export type PostProcessingFn = (raw: string, extraData?: any) => Promise<string>
 
 export interface DistilPipelineConfig {
   pipelineName: string;
+  modelName: string;
   systemPrompt: string;
   userPrompt: string;
   defaultParameters?: Record<string, any>;
@@ -27,6 +28,7 @@ export class DistilPipeline {
   private preprocessFn: PreProcessingFn;
   private postprocessFn: PostProcessingFn;
   public pipelineName: string;
+  public modelName: string;
   public systemPrompt: string;
   public userPrompt: string;
   public defaultParameters?: Record<string, any>;
@@ -35,6 +37,7 @@ export class DistilPipeline {
     this.logger = new Logger(logLevel || "DEBUG");
     this.inferenceEngine = new InferenceEngine();
     this.pipelineName = config.pipelineName;
+    this.modelName = config.modelName;
     this.systemPrompt = config.systemPrompt;
     this.userPrompt = config.userPrompt;
     this.defaultParameters = config.defaultParameters;
@@ -56,10 +59,18 @@ export class DistilPipeline {
     const startTime = Date.now();
     let totalCost = 0;
     try {
-      this.logger.info("Validating input..." + JSON.stringify(inputData));
-      let validInput = validateInput(inputData);
-      // Override modelName with the pipeline name.
-      validInput.modelName = this.pipelineName;
+      // Set required fields from pipeline config, ensuring they can't be overridden
+      const input = {
+        ...inputData,  // First, take all fields from inputData
+        modelName: this.modelName,         // Then, override with pipeline config values
+        systemPrompt: this.systemPrompt,
+        userPrompt: this.userPrompt,
+      };
+      
+      
+      this.logger.info("Validating input..." + JSON.stringify(input));
+      let validInput = validateInput(input);
+      
       // Merge default parameters.
       if (this.defaultParameters) {
         validInput.parameters = { ...this.defaultParameters, ...validInput.parameters };
