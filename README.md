@@ -167,7 +167,11 @@ runExample().catch(console.error);
 
 ## Dashboard & Curation
 
-Distil includes an Express-based dashboard to help you review and curate your outputs:
+Distil includes two dashboard options for reviewing and curating your outputs:
+
+### 1. Express API Dashboard
+
+The built-in Express API provides basic endpoints for managing your pipeline versions:
 
 1. **Run the Dashboard:**
    Set the environment variable and start the server:
@@ -178,14 +182,41 @@ Distil includes an Express-based dashboard to help you review and curate your ou
    ```
    Then open [http://localhost:3000/dashboard/versions](http://localhost:3000/dashboard/versions).
 
-2. **Review Pipeline Versions:**  
-   The dashboard shows each version with its unique hash, tags, ratings, and finetuning status.
+2. **Available Endpoints:**
+   - `GET /dashboard/versions`: List all pipeline versions
+   - `POST /dashboard/versions/:id/tag`: Add tags to versions
+   - `POST /dashboard/versions/:id/rate`: Rate versions (1-5 stars)
+   - `POST /dashboard/versions/:id/finetune`: Mark versions as finetuned
 
-3. **Rate & Tag:**  
-   Use endpoints to add tags and rate output quality (e.g. 1–5 stars).
+### 2. Streamlit Dashboard (Recommended)
 
-4. **Automatic Finetuning Mark:**  
-   When you trigger a finetuning export from your UI, Distil calls the finetuning endpoint to automatically mark those outputs as finetuned, so they are not included in future training rounds.
+A full-featured web interface built with Streamlit that provides rich visualization and interaction:
+
+1. **Install Dashboard Dependencies:**
+   ```bash
+   cd dashboard
+   pip install -r requirements.txt
+   ```
+
+2. **Start the Dashboard:**
+   ```bash
+   streamlit run app.py
+   ```
+   Then open [http://localhost:8501](http://localhost:8501)
+
+3. **Features:**
+   - Interactive version browser with expandable details
+   - Rating and tagging interface
+   - Analytics and visualizations
+   - Synthetic data generation
+   - Advanced filtering and search
+
+4. **Dashboard Tabs:**
+   - **Pipeline Versions:** Browse, rate, and tag outputs
+   - **Analytics:** View distributions and trends
+   - **Synthetic Data:** Generate new data from high-quality examples
+
+For more details, see the [dashboard README](dashboard/README.md).
 
 ## Why Distil?
 
