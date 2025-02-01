@@ -35,13 +35,14 @@
     "@supabase/supabase-js": "^2.0.0",
     "crypto": "^1.0.1",
     "csv-writer": "^1.6.0",
-    "fast-string-similarity": "^0.0.1",
     "openai": "^4.0.0",
+    "string-similarity": "^4.0.4",
     "tiktoken": "^1.0.0"
   },
   "devDependencies": {
     "@types/jest": "^29.0.0",
     "@types/node": "^20.0.0",
+    "@types/string-similarity": "^4.0.2",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.0.0",

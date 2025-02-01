@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import crypto from 'crypto';
-import { stringSimilarity } from 'fast-string-similarity';
+import { compareTwoStrings } from 'string-similarity';
 import { encoding_for_model } from 'tiktoken';
 import { StorageAdapter, StorageConfig, createStorageAdapter, UsageStats, PromptLog, ModelRouting } from './storage';
 import { Stream } from 'openai/streaming';
@@ -82,7 +82,7 @@ class PrefixTree {
       for (let j = i + 1; j < this.paths.length; j++) {
         if (used.has(j)) continue;
 
-        const similarity = stringSimilarity(
+        const similarity = compareTwoStrings(
           this.paths[i].join(' '),
           this.paths[j].join(' ')
         );
