@@ -56,7 +56,7 @@ export class DistilPipeline {
     const startTime = Date.now();
     let totalCost = 0;
     try {
-      this.logger.info("Validating input...", inputData);
+      this.logger.info("Validating input..." + JSON.stringify(inputData));
       let validInput = validateInput(inputData);
       // Override modelName with the pipeline name.
       validInput.modelName = this.pipelineName;
