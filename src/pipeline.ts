@@ -68,8 +68,9 @@ export class DistilPipeline {
       // Merge default parameters first
       const parameters = {
         ...(this.defaultParameters || {}),
-        ...(inputData.parameters || {})
+        ...(inputData || {})
       };
+
 
       // Helper function to substitute parameters in template strings
       const substituteParameters = (template: string, params: Record<string, any>): string => {
@@ -80,6 +81,7 @@ export class DistilPipeline {
           const replacement = typeof value === 'object' 
             ? JSON.stringify(value)
             : String(value);
+          
           // Use regex to replace all occurrences
           result = result.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
         }
@@ -89,6 +91,7 @@ export class DistilPipeline {
       // Apply parameter substitution to prompt templates
       const systemPrompt = substituteParameters(this.systemPrompt, parameters);
       const userPrompt = substituteParameters(this.userPrompt, parameters);
+
 
       // Add processed prompts to input
       input.systemPrompt = systemPrompt;
@@ -104,21 +107,6 @@ export class DistilPipeline {
 
       // Compute template version hash.
       const templateHash = computeTemplateHash(validInput);
-      if (!pipelineVersionStore[templateHash]) {
-        pipelineVersionStore[templateHash] = {
-          id: templateHash,
-          pipelineName: this.pipelineName,
-          template: {
-            systemPrompt: this.systemPrompt,
-            userPrompt: this.userPrompt,
-            parameterKeys: validInput.parameters ? Object.keys(validInput.parameters).sort() : []
-          },
-          tags: [],
-          createdAt: new Date().toISOString()
-        };
-        await this.logger.info(`New pipeline version recorded with hash: ${templateHash}`);
-      }
-
       // Run inference.
       const { detail, rawOutput, cost } = await this.inferenceEngine.callInference({
         ...validInput,
