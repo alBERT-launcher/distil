@@ -7,13 +7,19 @@ export class Logger {
 
   constructor(private level: "DEBUG" | "INFO" | "WARNING" | "ERROR" = "DEBUG") {
     if (config.elastic.host) {
-      this.esClient = new Client({
-        node: config.elastic.host,
-        auth: {
+      const clientConfig: any = {
+        node: config.elastic.host
+      };
+
+      // Only add authentication if credentials are provided
+      if (config.elastic.user && config.elastic.password) {
+        clientConfig.auth = {
           username: config.elastic.user,
           password: config.elastic.password
-        }
-      });
+        };
+      }
+
+      this.esClient = new Client(clientConfig);
     }
   }
 
