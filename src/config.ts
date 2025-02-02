@@ -20,6 +20,6 @@ export const config = {
     delay: 1000
   },
   dashboard: {
-    port: process.env.DASHBOARD_PORT || 3000
+    port: process.env.DASHBOARD_PORT || 3452
   }
 };

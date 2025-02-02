@@ -5,7 +5,7 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
-        "build": "tsc",
+        "build": "chmod +x build.sh && ./build.sh",
         "start": "node dist/index.js",
         "dev": "ts-node-dev src/index.ts"
     },
@@ -24,6 +24,10 @@
     ],
     "author": "Your Name",
     "license": "MIT",
+    "files": [
+        "dist/**/*",
+        "README.md"
+    ],
     "dependencies": {
         "@elastic/elasticsearch": "^8.7.0",
         "axios": "^1.4.0",

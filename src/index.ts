@@ -13,8 +13,8 @@ const app: express.Application = express();
 app.engine('html', engine({
   extname: '.html',
   defaultLayout: 'main',
-  layoutsDir: path.join(process.cwd(), 'src/public/templates/layouts'),
-  partialsDir: path.join(process.cwd(), 'src/public/templates/partials'),
+  layoutsDir: path.join(__dirname, 'public/templates/layouts'),
+  partialsDir: path.join(__dirname, 'public/templates/partials'),
   helpers: {
     truncate: (str: string, len: number) => str.substring(0, len),
     formatDate: (date: string) => new Date(date).toLocaleString(),
@@ -30,7 +30,7 @@ app.engine('html', engine({
 }));
 // Change the views path to point to the source templates directory
 app.set('view engine', 'html');
-app.set('views', path.join(process.cwd(), 'src/public/templates'));
+app.set('views', path.join(__dirname, 'public/templates'));
 
 // Middleware
 app.use(express.json());
