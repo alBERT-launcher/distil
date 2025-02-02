@@ -1,0 +1,14 @@
+<div class="uk-card uk-card-body">
+    <div id="pipeline-list" 
+         hx-get="/dashboard/pipelines" 
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="animate-pulse">
+            <div class="h-4 bg-muted rounded w-3/4"></div>
+            <div class="space-y-3 mt-4">
+                <div class="h-4 bg-muted rounded"></div>
+                <div class="h-4 bg-muted rounded w-5/6"></div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -18,6 +18,14 @@ app.engine('html', engine({
   helpers: {
     truncate: (str: string, len: number) => str.substring(0, len),
     formatDate: (date: string) => new Date(date).toLocaleString(),
+    json: (obj: any) => JSON.stringify(obj, null, 2),
+    times: function(n: number, block: any) {
+      let accum = '';
+      for(let i = 1; i <= n; ++i)
+        accum += block.fn(i);
+      return accum;
+    },
+    lte: (a: number, b: number) => a <= b
   }
 }));
 // Change the views path to point to the source templates directory
@@ -30,7 +38,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.get('/', (_req, res) => {
-  res.render('base');
+  res.render('index');
 });
 
 // API routes

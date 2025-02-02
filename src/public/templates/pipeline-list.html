@@ -2,24 +2,75 @@
     <h2 class="text-lg font-semibold mb-4">Pipelines</h2>
     {{#if pipelines}}
         {{#each pipelines}}
-        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
-             hx-get="/dashboard/pipelines/{{name}}/versions"
-             hx-target="#pipeline-details"
-             hx-trigger="click">
-            <div class="flex justify-between items-center">
+        <div class="uk-accordion uk-accordion-bordered mb-2">
+            <div class="uk-accordion-header flex items-center justify-between p-3 hover:bg-accent/50 cursor-pointer rounded-md"
+                 onclick="this.closest('.uk-accordion').classList.toggle('uk-accordion-active')">
                 <div>
-                    <h3 class="text-lg font-medium">{{name}}</h3>
-                    <p class="text-sm text-gray-500">{{versions.length}} versions</p>
+                    <h3 class="text-sm font-medium">{{name}}</h3>
+                    <p class="text-xs text-muted-foreground">{{versions.length}} versions</p>
                 </div>
-                <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                </svg>
+                <uk-icon icon="chevron-down" cls-custom="uk-accordion-icon"></uk-icon>
+            </div>
+            <div class="uk-accordion-content hidden mt-1">
+                {{#each versions}}
+                <div class="uk-card uk-card-hover p-3 mb-2 rounded-md cursor-pointer"
+                     hx-get="/dashboard/pipelines/{{../name}}/versions/{{id}}/generations"
+                     hx-target="#content-area"
+                     hx-trigger="click"
+                     onclick="document.getElementById('content-title').textContent = '{{../name}}: Version {{truncate id 8}}'">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium">Version {{truncate id 8}}</p>
+                            <div class="flex items-center gap-2">
+                                <p class="text-xs text-muted-foreground">{{formatDate createdAt}}</p>
+                                {{#if metadata.generationCount}}
+                                <span class="uk-badge">{{metadata.generationCount}} generations</span>
+                                {{/if}}
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1">
+                            {{#if rating}}
+                            <span class="uk-badge uk-badge-success">
+                                {{rating}}/5
+                            </span>
+                            {{/if}}
+                            {{#if isFinetuned}}
+                            <span class="uk-badge uk-badge-primary">
+                                FT
+                            </span>
+                            {{/if}}
+                        </div>
+                    </div>
+                    {{#if template}}
+                    <div class="mt-2 text-xs text-muted-foreground">
+                        <div class="truncate">
+                            <span class="font-medium">System:</span> {{template.systemPrompt}}
+                        </div>
+                        <div class="truncate">
+                            <span class="font-medium">User:</span> {{template.userPrompt}}
+                        </div>
+                    </div>
+                    {{/if}}
+                </div>
+                {{/each}}
             </div>
         </div>
         {{/each}}
     {{else}}
-        <div class="text-gray-500 text-center py-8">
+        <div class="text-sm text-muted-foreground text-center py-4">
             No pipelines found. Start by creating a pipeline and running some generations.
         </div>
     {{/if}}
+
+    <style>
+    .uk-accordion-active .uk-accordion-content {
+        display: block;
+    }
+    .uk-accordion-active .uk-accordion-icon {
+        transform: rotate(180deg);
+    }
+    .uk-accordion-icon {
+        transition: transform 0.2s ease-in-out;
+    }
+    </style>
 </div>

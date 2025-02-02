@@ -1,89 +1,69 @@
 <div class="space-y-4">
-    <div class="flex justify-between items-center mb-4">
-        <h2 class="text-lg font-semibold">Versions for {{pipelineName}}</h2>
-        <button class="text-sm text-gray-500 hover:text-gray-700"
-                hx-get="/dashboard/pipelines"
-                hx-target="#pipeline-details"
-                hx-swap="innerHTML">
-            Close
-        </button>
-    </div>
-    
-    {{#each versions}}
-    <div class="border rounded-lg p-4">
+    {{#each generations}}
+    <div class="bg-white border rounded-lg p-4 hover:bg-gray-50">
         <div class="flex justify-between items-start mb-2">
-            <div class="flex-1">
-                <h3 class="text-md font-medium">Version {{truncate id 8}}</h3>
-                <p class="text-sm text-gray-500">Created: {{formatDate createdAt}}</p>
+            <div>
+                <h3 class="text-sm font-medium">Generation {{truncate id 8}}</h3>
+                <p class="text-xs text-gray-500">{{formatDate timestamp}}</p>
             </div>
             <div class="flex items-center space-x-2">
-                {{#if rating}}
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Rating: {{rating}}/5
-                </span>
-                {{/if}}
-                {{#if isFinetuned}}
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    Finetuned
-                </span>
-                {{/if}}
+                <div class="rating-widget">
+                    {{#times 5}}
+                    <button class="star-btn {{#if (lte this ../rating)}}active{{/if}}"
+                            onclick="rateGeneration('{{../id}}', {{this}})">★</button>
+                    {{/times}}
+                </div>
+                <button class="btn btn-sm {{#if isFinetuned}}btn-primary{{else}}btn-ghost{{/if}}"
+                        onclick="markForFinetuning('{{id}}')">
+                    {{#if isFinetuned}}Finetuned{{else}}Mark for FT{{/if}}
+                </button>
             </div>
         </div>
-
-        <div class="mt-4 space-y-2">
-            <div>
-                <h4 class="text-sm font-medium text-gray-700">System Prompt</h4>
-                <p class="text-sm text-gray-600 mt-1">{{template.systemPrompt}}</p>
+        <div class="mt-2">
+            <div class="text-sm">
+                <h4 class="font-medium text-gray-700">Output</h4>
+                <pre class="mt-1 text-sm text-gray-600 whitespace-pre-wrap p-3 bg-gray-50 rounded-md">{{output}}</pre>
             </div>
-            <div>
-                <h4 class="text-sm font-medium text-gray-700">User Prompt</h4>
-                <p class="text-sm text-gray-600 mt-1">{{template.userPrompt}}</p>
+            <div class="mt-2 flex space-x-2">
+                <button class="btn btn-sm btn-ghost" onclick="showDetails('{{id}}')">
+                    View Details
+                </button>
             </div>
-            {{#if template.parameterKeys.length}}
-            <div>
-                <h4 class="text-sm font-medium text-gray-700">Parameters</h4>
-                <div class="flex flex-wrap gap-2 mt-1">
-                    {{#each template.parameterKeys}}
-                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                        {{this}}
-                    </span>
-                    {{/each}}
-                </div>
-            </div>
-            {{/if}}
-            {{#if tags.length}}
-            <div>
-                <h4 class="text-sm font-medium text-gray-700">Tags</h4>
-                <div class="flex flex-wrap gap-2 mt-1">
-                    {{#each tags}}
-                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                        {{this}}
-                    </span>
-                    {{/each}}
-                </div>
-            </div>
-            {{/if}}
-        </div>
-
-        <div class="mt-4 flex justify-end space-x-2">
-            <button class="text-sm text-gray-600 hover:text-gray-800 px-3 py-1 rounded-md border hover:bg-gray-50"
-                    hx-post="/dashboard/pipelines/{{../pipelineName}}/versions/{{id}}/tag"
-                    hx-prompt="Enter a tag"
-                    hx-target="closest div">
-                Add Tag
-            </button>
-            <button class="text-sm text-gray-600 hover:text-gray-800 px-3 py-1 rounded-md border hover:bg-gray-50"
-                    hx-post="/dashboard/pipelines/{{../pipelineName}}/versions/{{id}}/rate"
-                    hx-prompt="Rate from 1-5"
-                    hx-target="closest div">
-                Rate
-            </button>
-            <button class="text-sm text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md"
-                    hx-post="/dashboard/pipelines/{{../pipelineName}}/versions/{{id}}/generations/finetune"
-                    hx-target="closest div">
-                Mark as Finetuned
-            </button>
         </div>
     </div>
     {{/each}}
 </div>
+
+<style>
+.rating-widget .star-btn {
+    color: #d1d5db;
+    font-size: 1.25rem;
+    padding: 0 2px;
+}
+.rating-widget .star-btn.active {
+    color: #fbbf24;
+}
+</style>
+
+<script>
+function rateGeneration(id, rating) {
+    htmx.ajax('POST', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/${id}/rate`, {
+        values: { rating },
+        swap: 'innerHTML'
+    });
+}
+
+function markForFinetuning(id) {
+    htmx.ajax('POST', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/finetune`, {
+        values: { generationIds: [id] },
+        swap: 'innerHTML'
+    });
+}
+
+function showDetails(id) {
+    htmx.ajax('GET', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/${id}`, {
+        target: '#content-area',
+        swap: 'innerHTML'
+    });
+}
+</script>

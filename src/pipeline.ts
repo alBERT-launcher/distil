@@ -1,11 +1,11 @@
 // src/pipeline.ts
-import { Client } from '@elastic/elasticsearch';
-import { 
+import { Client } from "@elastic/elasticsearch";
+import {
   PipelineVersionRecord,
   ESSearchResponse,
   LLMInput,
-  GenerationResult 
-} from './types';
+  GenerationResult,
+} from "./types";
 import { validateInput, postprocess, computeTemplateHash } from "./utils";
 import { InferenceEngine } from "./inference";
 import { Logger } from "./logger";
@@ -15,14 +15,14 @@ let esClient: Client;
 
 if (config.elastic.host) {
   const clientConfig: any = {
-    node: config.elastic.host
+    node: config.elastic.host,
   };
 
   // Only add authentication if credentials are provided
   if (config.elastic.user && config.elastic.password) {
     clientConfig.auth = {
       username: config.elastic.user,
-      password: config.elastic.password
+      password: config.elastic.password,
     };
   }
 
@@ -31,7 +31,10 @@ if (config.elastic.host) {
 
 // Types for custom functions.
 export type PreProcessingFn = (input: LLMInput) => Promise<LLMInput> | LLMInput;
-export type PostProcessingFn = (raw: string, extraData?: any) => Promise<string> | string;
+export type PostProcessingFn = (
+  raw: string,
+  extraData?: any
+) => Promise<string> | string;
 
 export interface DistilPipelineConfig {
   pipelineName: string;
@@ -54,7 +57,10 @@ export class DistilPipeline {
   public userPrompt: string;
   public defaultParameters?: Record<string, any>;
 
-  constructor(config: DistilPipelineConfig, logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR") {
+  constructor(
+    config: DistilPipelineConfig,
+    logLevel?: "DEBUG" | "INFO" | "WARNING" | "ERROR"
+  ) {
     this.logger = new Logger(logLevel || "DEBUG");
     this.inferenceEngine = new InferenceEngine();
     this.pipelineName = config.pipelineName;
@@ -82,44 +88,53 @@ export class DistilPipeline {
     try {
       // Set required fields from pipeline config, ensuring they can't be overridden
       const input = {
-        ...inputData,  // First, take all fields from inputData
+        ...inputData, // First, take all fields from inputData
         modelName: this.modelName,
       };
-      
+
       // Merge default parameters first
       const parameters = {
         ...(this.defaultParameters || {}),
-        ...(inputData || {})
+        ...(inputData || {}),
       };
 
-
       // Helper function to substitute parameters in template strings
-      const substituteParameters = (template: string, params: Record<string, any>): string => {
+      const substituteParameters = (
+        template: string,
+        params: Record<string, any>
+      ): string => {
         let result = template;
         for (const [key, value] of Object.entries(params)) {
           const placeholder = `{${key}}`;
           // Handle different value types
-          const replacement = typeof value === 'object' 
-            ? JSON.stringify(value)
-            : String(value);
-          
+          const replacement =
+            typeof value === "object" ? JSON.stringify(value) : String(value);
+
           // Use regex to replace all occurrences
-          result = result.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
+          result = result.replace(
+            new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+            replacement
+          );
         }
         return result;
       };
-      const templateHash = computeTemplateHash({systemPrompt: this.systemPrompt, userPrompt: this.userPrompt, parameters, pipelineName: this.pipelineName, modelName: this.modelName});
+      const templateHash = computeTemplateHash({
+        systemPrompt: this.systemPrompt,
+        userPrompt: this.userPrompt,
+        parameters,
+        pipelineName: this.pipelineName,
+        modelName: this.modelName,
+      });
 
       // Apply parameter substitution to prompt templates
       const systemPrompt = substituteParameters(this.systemPrompt, parameters);
       const userPrompt = substituteParameters(this.userPrompt, parameters);
 
-
       // Add processed prompts to input
       input.systemPrompt = systemPrompt;
       input.userPrompt = userPrompt;
       input.parameters = parameters;
-      
+
       this.logger.info("Validating input..." + JSON.stringify(input));
       let validInput = validateInput(input);
       await this.logger.info("Input validated.");
@@ -129,25 +144,29 @@ export class DistilPipeline {
 
       // Compute template version hash.
       // Run inference.
-      const { detail, rawOutput, cost } = await this.inferenceEngine.callInference({
-        ...validInput,
-        templateHash,
-        originalInput: inputData,
-        pipelineName: this.pipelineName
-      });
+      const { detail, rawOutput, cost } =
+        await this.inferenceEngine.callInference({
+          ...validInput,
+          templateHash,
+          originalInput: inputData,
+          pipelineName: this.pipelineName,
+        });
       totalCost += cost;
-      const processedOutput = await this.postprocessFn(rawOutput, validInput.extraData);
+      const processedOutput = await this.postprocessFn(
+        rawOutput,
+        validInput.extraData
+      );
       const timeTaken = (Date.now() - startTime) / 1000;
 
       return {
         processedOutput,
-        metadata: { 
-          generationCost: totalCost, 
+        metadata: {
+          generationCost: totalCost,
           timeTaken,
           input: validInput,
           rawOutput,
-          templateHash
-        }
+          templateHash,
+        },
       };
     } catch (error: any) {
       await this.logger.error("Generation error: " + error.message);
@@ -174,7 +193,7 @@ interface PipelineAggregationBucket {
           tags?: string[];
           rating?: number;
           isFinetuned?: boolean;
-          '@timestamp'?: string;
+          "@timestamp"?: string;
         };
       }>;
     };
@@ -208,23 +227,64 @@ interface PipelineAggregationResponse {
   hits: {
     hits: any[];
   };
-  aggregations?: Record<string, {
-    buckets: PipelineAggregationBucket[];
-  }>;
+  aggregations?: Record<
+    string,
+    {
+      buckets: PipelineAggregationBucket[];
+    }
+  >;
 }
 
-function isValidHit(hit: { _source?: PipelineVersionRecord } | undefined): hit is { _source: PipelineVersionRecord } {
+interface GenerationDocument {
+  pipelineName: string;
+  pipelineHash: string;
+  output: string;
+  input: {
+    raw: {
+      [key: string]: any;
+    };
+    preprocessed: {
+      systemPrompt: string;
+      userPrompt: string;
+      parameters?: Record<string, any>;
+    };
+    pipelineName: string;
+  };
+  timeTaken?: number;
+  generationCost?: number;
+  rating?: number;
+  isFinetuned?: boolean;
+  "@timestamp"?: string;
+}
+
+interface ESSearchHit {
+  _id: string;
+  _source: GenerationDocument;
+}
+
+interface ESGetResponse {
+  _id: string;
+  _source: GenerationDocument;
+}
+
+function isValidHit(
+  hit: { _source?: PipelineVersionRecord } | undefined
+): hit is { _source: PipelineVersionRecord } {
   return !!hit && !!hit._source;
 }
 
 /**
  * Get all pipeline versions.
  */
-export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]> {
+export async function getAllPipelineVersions(): Promise<
+  PipelineVersionRecord[]
+> {
   try {
     // Get all indices
-    const indices = await esClient.indices.get({ index: '*' });
-    const pipelineIndices = Object.keys(indices).filter(index => !index.startsWith('.'));
+    const indices = await esClient.indices.get({ index: "*" });
+    const pipelineIndices = Object.keys(indices).filter(
+      (index) => !index.startsWith(".")
+    );
 
     if (pipelineIndices.length === 0) {
       return [];
@@ -232,7 +292,7 @@ export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]>
     console.log("Indices:", pipelineIndices);
 
     const pipelines: PipelineVersionRecord[] = [];
-    
+
     for (const index of pipelineIndices) {
       try {
         const result = await esClient.search<unknown, PipelineSearchResponse>({
@@ -242,35 +302,36 @@ export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]>
             aggs: {
               unique_pipelines: {
                 terms: {
-                  field: 'pipelineHash.keyword',
-                  size: 1000
+                  field: "pipelineHash.keyword",
+                  size: 1000,
                 },
                 aggs: {
                   latest_doc: {
                     top_hits: {
                       size: 1,
                       _source: [
-                        'pipelineName',
-                        'pipelineHash',
-                        'parameterKeys',
-                        'input',
-                        'output',
-                        'template',
-                        'tags',
-                        'rating',
-                        'isFinetuned',
-                        '@timestamp'
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          }
+                        "pipelineName",
+                        "pipelineHash",
+                        "parameterKeys",
+                        "input",
+                        "output",
+                        "template",
+                        "tags",
+                        "rating",
+                        "isFinetuned",
+                        "@timestamp",
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
         });
 
-        const buckets = (result.aggregations as any).unique_pipelines?.buckets || [];
-        
+        const buckets =
+          (result.aggregations as any).unique_pipelines?.buckets || [];
+
         for (const bucket of buckets) {
           const hits = bucket.latest_doc.hits.hits;
           if (hits.length === 0) continue;
@@ -278,7 +339,11 @@ export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]>
           const hit = hits[0];
           const source = hit._source;
           console.log("Hit:", hit);
-          if (source && typeof source === 'object' && 'pipelineName' in source) {
+          if (
+            source &&
+            typeof source === "object" &&
+            "pipelineName" in source
+          ) {
             console.log("Source:", source);
             const typedSource = source as {
               pipelineName: string;
@@ -294,22 +359,24 @@ export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]>
               tags?: string[];
               rating?: number;
               isFinetuned?: boolean;
-              '@timestamp'?: string;
+              "@timestamp"?: string;
             };
 
             pipelines.push({
-              id: hit._id,
+              id: typedSource.pipelineHash,
               pipelineName: typedSource.pipelineName,
               template: {
                 systemPrompt: typedSource.input.preprocessed.systemPrompt,
                 userPrompt: typedSource.input.preprocessed.userPrompt,
-                parameterKeys: typedSource.input.preprocessed.parameters ? Object.keys(typedSource.input.preprocessed.parameters) : []
+                parameterKeys: typedSource.input.preprocessed.parameters
+                  ? Object.keys(typedSource.input.preprocessed.parameters)
+                  : [],
               },
               tags: typedSource.tags || [],
               rating: typedSource.rating,
               isFinetuned: typedSource.isFinetuned,
-              createdAt: typedSource['@timestamp'] || new Date().toISOString(),
-              generations: []
+              createdAt: typedSource["@timestamp"] || new Date().toISOString(),
+              generations: [],
             });
           }
         }
@@ -320,11 +387,12 @@ export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]>
       }
     }
     // Sort by timestamp
-    return pipelines.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    return pipelines.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   } catch (error) {
-    console.error('Error fetching pipeline versions:', error);
+    console.error("Error fetching pipeline versions:", error);
     return [];
   }
 }
@@ -332,48 +400,57 @@ export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]>
 /**
  * Add a tag to a pipeline version.
  */
-export async function addTagToPipelineVersion(id: string, tag: string): Promise<boolean> {
+export async function addTagToPipelineVersion(
+  id: string,
+  tag: string
+): Promise<boolean> {
   try {
     // Get all indices
-    const indices = await esClient.indices.get({ index: '*' });
-    const pipelineIndices = Object.keys(indices).filter(index => !index.startsWith('.'));
+    const indices = await esClient.indices.get({ index: "*" });
+    const pipelineIndices = Object.keys(indices).filter(
+      (index) => !index.startsWith(".")
+    );
 
     if (pipelineIndices.length === 0) {
       return false;
     }
 
     const response = await esClient.search<PipelineVersionRecord>({
-      index: pipelineIndices.join(','),
+      index: pipelineIndices.join(","),
       body: {
         query: {
           ids: {
-            values: [id]
-          }
-        }
-      }
+            values: [id],
+          },
+        },
+      },
     });
 
-    if (!response.hits?.hits || response.hits.hits.length === 0 || response.hits.hits[0]._source === undefined) {
+    if (
+      !response.hits?.hits ||
+      response.hits.hits.length === 0 ||
+      response.hits.hits[0]._source === undefined
+    ) {
       return false;
     }
 
     const hit = response.hits.hits[0];
     const version = hit._source!;
     const tags = new Set([...(version.tags || []), tag]);
-    
+
     await esClient.update({
       index: hit._index,
       id: hit._id!,
       body: {
         doc: {
-          tags: Array.from(tags)
-        }
-      }
+          tags: Array.from(tags),
+        },
+      },
     });
 
     return true;
   } catch (error) {
-    console.error('Error adding tag:', error);
+    console.error("Error adding tag:", error);
     return false;
   }
 }
@@ -381,19 +458,22 @@ export async function addTagToPipelineVersion(id: string, tag: string): Promise<
 /**
  * Rate a pipeline version (1-5 stars).
  */
-export async function ratePipelineVersion(id: string, rating: number): Promise<boolean> {
+export async function ratePipelineVersion(
+  id: string,
+  rating: number
+): Promise<boolean> {
   try {
     if (rating < 1 || rating > 5) {
       throw new Error("Rating must be between 1 and 5.");
     }
 
     const response = await esClient.search<{ _source: PipelineVersionRecord }>({
-      index: 'pipeline_versions',
+      index: "pipeline_versions",
       body: {
         query: {
-          term: { id }
-        }
-      }
+          term: { id },
+        },
+      },
     });
 
     if (!response.hits?.hits?.[0]) {
@@ -401,21 +481,24 @@ export async function ratePipelineVersion(id: string, rating: number): Promise<b
     }
 
     const hit = response.hits.hits[0];
-    
+
     await esClient.update({
-      index: 'pipeline_versions',
+      index: "pipeline_versions",
       id: hit._id!,
       body: {
-        doc: { rating }
-      }
+        doc: { rating },
+      },
     });
 
     return true;
   } catch (error) {
-    if (error instanceof Error && error.message === "Rating must be between 1 and 5.") {
+    if (
+      error instanceof Error &&
+      error.message === "Rating must be between 1 and 5."
+    ) {
       throw error;
     }
-    console.error('Error rating pipeline version:', error);
+    console.error("Error rating pipeline version:", error);
     return false;
   }
 }
@@ -423,15 +506,17 @@ export async function ratePipelineVersion(id: string, rating: number): Promise<b
 /**
  * Mark a pipeline version as finetuned.
  */
-export async function markPipelineVersionAsFinetuned(id: string): Promise<boolean> {
+export async function markPipelineVersionAsFinetuned(
+  id: string
+): Promise<boolean> {
   try {
     const response = await esClient.search<{ _source: PipelineVersionRecord }>({
-      index: 'pipeline_versions',
+      index: "pipeline_versions",
       body: {
         query: {
-          term: { id }
-        }
-      }
+          term: { id },
+        },
+      },
     });
 
     if (!response.hits?.hits?.[0]) {
@@ -439,18 +524,137 @@ export async function markPipelineVersionAsFinetuned(id: string): Promise<boolea
     }
 
     const hit = response.hits.hits[0];
-    
+
     await esClient.update({
-      index: 'pipeline_versions',
+      index: "pipeline_versions",
       id: hit._id!,
       body: {
-        doc: { isFinetuned: true }
-      }
+        doc: { isFinetuned: true },
+      },
     });
 
     return true;
   } catch (error) {
-    console.error('Error marking pipeline version as finetuned:', error);
+    console.error("Error marking pipeline version as finetuned:", error);
+    return false;
+  }
+}
+
+/**
+ * Get generations for a pipeline version
+ */
+export async function getGenerationsForVersion(
+  pipelineName: string,
+  versionId: string
+) {
+  try {
+    const response = await esClient.search<GenerationDocument>({
+      index: pipelineName.toLowerCase(),
+      query: {
+        bool: {
+          must: [{ term: { pipelineHash: versionId } }],
+        },
+      },
+      size: 50,
+    });
+
+    console.log({ response });
+    return (response.hits.hits as ESSearchHit[]).map((hit) => {
+      const source = hit._source;
+      return {
+        id: hit._id,
+        processedOutput: source.output,
+        metadata: {
+          input: source.input,
+          timeTaken: source.timeTaken || 0,
+          generationCost: source.generationCost || 0,
+          pipelineHash: source.pipelineHash,
+          rawOutput: source.output,
+          pipelineName: source.pipelineName,
+        },
+        rating: source.rating,
+        isFinetuned: source.isFinetuned,
+      };
+    });
+  } catch (error) {
+    console.error("Error fetching generations for pipeline version:", error);
+    return [];
+  }
+}
+
+/**
+ * Get a specific generation by ID
+ */
+export async function getGenerationById(pipelineName: string, id: string) {
+  const response = await esClient.get<GenerationDocument>({
+    index: pipelineName.toLowerCase(),
+    id,
+  });
+
+  if (!response._source) {
+    throw new Error(`Generation ${id} not found`);
+  }
+
+  const source = response._source;
+  return {
+    id: response._id,
+    processedOutput: source.output,
+    metadata: {
+      input: source.input,
+      timeTaken: source.timeTaken || 0,
+      generationCost: source.generationCost || 0,
+      pipelineHash: source.pipelineHash,
+      rawOutput: source.output,
+      pipelineName: source.pipelineName,
+    },
+    rating: source.rating,
+    isFinetuned: source.isFinetuned,
+  };
+}
+
+/**
+ * Rate a generation
+ */
+export async function rateGeneration(
+  id: string,
+  rating: number
+): Promise<boolean> {
+  try {
+    await esClient.update({
+      index: config.elastic.logIndex,
+      id,
+      doc: {
+        rating: parseInt(rating.toString()),
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to rate generation:", error);
+    return false;
+  }
+}
+
+/**
+ * Mark generations for finetuning
+ */
+export async function markGenerationsForFinetuning(
+  ids: string[]
+): Promise<boolean> {
+  try {
+    await Promise.all(
+      ids.map((id) =>
+        esClient.update({
+          index: config.elastic.logIndex,
+          id,
+          doc: {
+            isFinetuned: true,
+          },
+        })
+      )
+    );
+    return true;
+  } catch (error) {
+    console.error("Failed to mark generations for finetuning:", error);
     return false;
   }
 }

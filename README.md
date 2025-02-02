@@ -1,20 +1,20 @@
-# Distil 🧪
+# Distil 
 
 Distil is a production-grade TypeScript framework for building, monitoring, and improving LLM pipelines. It provides end-to-end tracing of prompt-completion pairs, integrated curation tools, and automated fine-tuning workflows.
 
 ### Current Features
-- 🚀 **Robust Pipelines**: Custom pre/post processing, retry logic, and error handling
-- 📊 **Full Traceability**: Monitor costs, performance, and success rates with Elasticsearch integration
-- 🔄 **Version Control**: Hash-based tracking of prompts and parameters to identify what works best
-- ⭐️ **Curation Tools**: Rate outputs, tag examples, and export for fine-tuning
-- 📈 **Built-in Dashboard**: View pipeline performance, costs, and version history
+- **Robust Pipelines**: Custom pre/post processing, retry logic, and error handling
+- **Full Traceability**: Monitor costs, performance, and success rates with Elasticsearch integration
+- **Version Control**: Hash-based tracking of prompts and parameters to identify what works best
+- **Curation Tools**: Rate outputs, tag examples, and export for fine-tuning
+- **Built-in Dashboard**: Modern web interface to view pipeline performance, versions, and metrics
 
-### Coming Soon 🔥
-- 🤖 **Synthetic Data Generation**: Automatically create high-quality training data using your best examples
-- 🎯 **Fine-tuning Integration**: Seamlessly replace prompt-engineered models with fine-tuned versions
-- 🔍 **Advanced Analytics**: Deep insights into prompt performance and cost optimization
-- 🔐 **Enterprise Features**: Role-based access, audit logs, and persistent storage
-- 🌐 **Multi-Model Support**: Use any LLM provider with our unified interface
+### Coming Soon 
+- **Synthetic Data Generation**: Automatically create high-quality training data using your best examples
+- **Fine-tuning Integration**: Seamlessly replace prompt-engineered models with fine-tuned versions
+- **Advanced Analytics**: Deep insights into prompt performance and cost optimization
+- **Enterprise Features**: Role-based access, audit logs, and persistent storage
+- **Multi-Model Support**: Use any LLM provider with our unified interface
 
 Perfect for teams who need to:
 - Build production-ready LLM features
@@ -34,10 +34,10 @@ Perfect for teams who need to:
   Every pipeline run is logged with details like cost and runtime, so you can keep an eye on performance without breaking a sweat.
 
 - **Built-in Dashboard:**
-  Curious about what’s running? The dashboard gives you a simple web interface to view run history, track versions, and check metrics.
+  A sleek web interface built with Express and HTMX that lets you view pipeline versions, rate outputs, add tags, and track metrics in real-time. No additional dependencies required - it's all built into the core package.
 
 - **Elasticsearch Integration:**
-  Store your pipeline versions and logs in Elasticsearch for easy searching and analysis.
+  Store your pipeline versions and logs in Elasticsearch for easy searching and analysis. The dashboard provides a beautiful interface to explore this data.
 
 ## Getting Started
 
@@ -66,6 +66,10 @@ OPENLLM_BASE_URL=https://openrouter.ai/api/v1
 # Dashboard settings
 DASHBOARD_PORT=3000
 RUN_DASHBOARD=true
+
+# Stack Configuration (optional)
+STACK_VERSION=7.17.10
+CLUSTER_NAME=distil_cluster
 
 # Retry Configuration (optional)
 RETRY_ATTEMPTS=3    # Number of retries (default: 3)

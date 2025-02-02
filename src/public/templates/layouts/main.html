@@ -2,43 +2,128 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pipeline Dashboard</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width">
+    <title>Distil Dashboard</title>
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <link rel="stylesheet" href="https://unpkg.com/franken-ui@internal/dist/css/core.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/franken-ui@internal/dist/css/utilities.min.css" />
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/json-enc.js"></script>
+
+    <style>
+      :root {
+        font-family: Inter, sans-serif;
+        font-feature-settings: "liga" 1, "calt" 1;
+      }
+      @supports (font-variation-settings: normal) {
+        :root {
+          font-family: InterVariable, sans-serif;
+        }
+      }
+    </style>
+
+    <script>
+      const htmlElement = document.documentElement;
+      const __FRANKEN__ = JSON.parse(localStorage.getItem("__FRANKEN__") || "{}");
+
+      if (__FRANKEN__.mode === "dark" || (!__FRANKEN__.mode && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+        htmlElement.classList.add("dark");
+      } else {
+        htmlElement.classList.remove("dark");
+      }
+
+      htmlElement.classList.add(__FRANKEN__.theme || "uk-theme-zinc");
+      htmlElement.classList.add(__FRANKEN__.radii || "uk-radii-md");
+      htmlElement.classList.add(__FRANKEN__.shadows || "uk-shadows-sm");
+      htmlElement.classList.add(__FRANKEN__.font || "uk-font-sm");
+    </script>
 </head>
-<body class="bg-gray-100">
-    <nav class="bg-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <h1 class="text-xl font-bold">Pipeline Dashboard</h1>
+<body class="bg-background text-foreground">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div class="w-64 uk-card uk-card-body border-r border-border">
+            <div class="pb-4 border-b border-border">
+                <h1 class="uk-h2 font-bold">Distil</h1>
+                <p class="text-sm text-muted-foreground">Pipeline Dashboard</p>
+            </div>
+            <!-- Pipeline List -->
+            <div class="flex-1 overflow-y-auto py-4" id="pipeline-list" 
+                 hx-get="/dashboard/pipelines" 
+                 hx-trigger="load"
+                 hx-swap="innerHTML">
+                <div class="animate-pulse">
+                    <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div class="space-y-3 mt-4">
+                        <div class="h-4 bg-gray-200 rounded"></div>
+                        <div class="h-4 bg-gray-200 rounded w-5/6"></div>
                     </div>
                 </div>
             </div>
         </div>
-    </nav>
 
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <!-- Pipeline List -->
-        <div id="pipeline-list" class="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-8"
-             hx-get="/dashboard/pipelines" 
-             hx-trigger="load"
-             hx-swap="innerHTML">
-            <div class="animate-pulse">
-                <div class="h-4 bg-gray-200 rounded w-3/4"></div>
-                <div class="space-y-3 mt-4">
-                    <div class="h-4 bg-gray-200 rounded"></div>
-                    <div class="h-4 bg-gray-200 rounded w-5/6"></div>
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Top Bar -->
+            <div class="uk-card uk-card-body border-b border-border">
+                <div class="flex items-center justify-between">
+                    <h2 class="uk-h3" id="content-title">Select a Pipeline</h2>
+                    <div class="flex items-center space-x-2">
+                        <button class="uk-btn uk-btn-ghost" id="toggle-view-btn">
+                            <uk-icon icon="layout" cls-custom="mr-2"></uk-icon>
+                            Toggle View
+                        </button>
+                        <div class="uk-inline">
+                            <button class="uk-btn uk-btn-ghost uk-btn-icon" aria-label="Theme">
+                                <uk-icon icon="palette"></uk-icon>
+                            </button>
+                            <div class="uk-card uk-card-body uk-drop w-96" data-uk-drop="mode: click; offset: 8">
+                                <div class="uk-h3">Theme</div>
+                                <p class="mb-4 mt-1 text-muted-foreground">
+                                    Customize your dashboard appearance.
+                                </p>
+                                <uk-theme-switcher id="theme-switcher">
+                                    <select hidden>
+                                        <optgroup data-key="theme" label="Theme">
+                                            <option data-hex="#52525b" value="uk-theme-zinc" selected>Zinc</option>
+                                            <option data-hex="#64748b" value="uk-theme-slate">Slate</option>
+                                            <option data-hex="#2563eb" value="uk-theme-blue">Blue</option>
+                                            <option data-hex="#7c3aed" value="uk-theme-violet">Violet</option>
+                                        </optgroup>
+                                        <optgroup data-key="mode" label="Mode">
+                                            <option data-icon="sun" value="light">Light</option>
+                                            <option data-icon="moon" value="dark">Dark</option>
+                                        </optgroup>
+                                    </select>
+                                </uk-theme-switcher>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto p-6" id="content-area">
+                <div id="pipeline-details" class="bg-white shadow overflow-hidden sm:rounded-lg p-4">
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Selected Pipeline Details -->
-        <div id="pipeline-details" class="bg-white shadow overflow-hidden sm:rounded-lg p-4">
-        </div>
-    </main>
+    <script type="module" src="https://unpkg.com/franken-ui@internal/dist/js/core.iife.js"></script>
+    <script type="module" src="https://unpkg.com/franken-ui@internal/dist/js/icon.iife.js"></script>
+
+    <script>
+        document.getElementById('toggle-view-btn')?.addEventListener('click', function() {
+            const contentArea = document.getElementById('content-area');
+            if (contentArea.dataset.view === 'list') {
+                contentArea.dataset.view = 'detail';
+                this.innerHTML = '<uk-icon icon="layout" cls-custom="mr-2"></uk-icon>Show List';
+            } else {
+                contentArea.dataset.view = 'list';
+                this.innerHTML = '<uk-icon icon="layout" cls-custom="mr-2"></uk-icon>Show Details';
+            }
+        });
+    </script>
 </body>
 </html>

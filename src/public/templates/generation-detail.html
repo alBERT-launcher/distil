@@ -1,0 +1,102 @@
+<div class="uk-card uk-card-body">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h2 class="uk-h3">Generation Details</h2>
+            <p class="text-sm text-muted-foreground">ID: {{truncate id 8}}</p>
+            <p class="text-sm text-muted-foreground">Created: {{formatDate timestamp}}</p>
+        </div>
+        <div class="flex items-center space-x-2">
+            <div class="uk-rating">
+                {{#times 5}}
+                <button class="uk-rating-item {{#if (lte this ../rating)}}uk-rating-item-active{{/if}}"
+                        onclick="rateGeneration('{{../id}}', {{this}})">★</button>
+                {{/times}}
+            </div>
+            <button class="uk-btn {{#if isFinetuned}}uk-btn-primary{{else}}uk-btn-ghost{{/if}}"
+                    onclick="markForFinetuning('{{id}}')">
+                {{#if isFinetuned}}
+                <uk-icon icon="check" cls-custom="mr-2"></uk-icon>Finetuned
+                {{else}}
+                <uk-icon icon="plus" cls-custom="mr-2"></uk-icon>Mark for FT
+                {{/if}}
+            </button>
+        </div>
+    </div>
+
+    <div class="space-y-6">
+        <div class="uk-card uk-card-body uk-card-border">
+            <h3 class="uk-h4 mb-2">System Prompt</h3>
+            <pre class="uk-pre">{{systemPrompt}}</pre>
+        </div>
+        <div class="uk-card uk-card-body uk-card-border">
+            <h3 class="uk-h4 mb-2">User Prompt</h3>
+            <pre class="uk-pre">{{userPrompt}}</pre>
+        </div>
+        <div class="uk-card uk-card-body uk-card-border">
+            <h3 class="uk-h4 mb-2">Output</h3>
+            <pre class="uk-pre">{{output}}</pre>
+        </div>
+        {{#if metadata}}
+        <div class="uk-card uk-card-body uk-card-border">
+            <h3 class="uk-h4 mb-2">Metadata</h3>
+            <pre class="uk-pre">{{json metadata}}</pre>
+        </div>
+        {{/if}}
+    </div>
+
+    <div class="mt-6 flex justify-end">
+        <button class="uk-btn uk-btn-ghost" onclick="showGenerationList()">
+            <uk-icon icon="arrow-left" cls-custom="mr-2"></uk-icon>Back to List
+        </button>
+    </div>
+</div>
+
+<style>
+.uk-rating {
+    display: flex;
+    gap: 0.25rem;
+}
+.uk-rating-item {
+    color: var(--muted);
+    font-size: 1.25rem;
+    padding: 0 2px;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+.uk-rating-item-active {
+    color: var(--warning);
+}
+.uk-pre {
+    background: var(--muted-background);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+    white-space: pre-wrap;
+}
+</style>
+
+<script>
+function rateGeneration(id, rating) {
+    htmx.ajax('POST', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/${id}/rate`, {
+        values: { rating },
+        swap: 'innerHTML'
+    });
+}
+
+function markForFinetuning(id) {
+    htmx.ajax('POST', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/finetune`, {
+        values: { generationIds: [id] },
+        swap: 'innerHTML'
+    });
+}
+
+function showGenerationList() {
+    htmx.ajax('GET', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations`, {
+        target: '#content-area',
+        swap: 'innerHTML'
+    });
+}
+</script>

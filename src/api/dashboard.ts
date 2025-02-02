@@ -4,7 +4,11 @@ import {
   getAllPipelineVersions,
   addTagToPipelineVersion,
   ratePipelineVersion,
-  markPipelineVersionAsFinetuned
+  markPipelineVersionAsFinetuned,
+  getGenerationsForVersion,
+  getGenerationById,
+  rateGeneration,
+  markGenerationsForFinetuning
 } from "../pipeline";
 
 const router: express.Router = express.Router();
@@ -69,15 +73,53 @@ router.get("/pipelines/:name/versions", async (req: Request, res: Response) => {
 // GET generations for a specific pipeline version
 router.get("/pipelines/:name/versions/:id/generations", async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { name, id } = req.params;
     const versions = await getAllPipelineVersions();
     const version = versions.find(v => v.id === id);
     if (!version) {
       return res.status(404).json({ error: "Pipeline version not found" });
     }
-    res.json(version.generations || []);
+
+    const generations = await getGenerationsForVersion(name, id);
+
+    // If this is an HTMX request, render the template
+    if (req.headers['hx-request']) {
+      res.render('generations-list', {
+        layout: false,
+        pipelineName: version.pipelineName,
+        versionId: version.id,
+        generations
+      });
+    } else {
+      // Otherwise return JSON
+      res.json(generations);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch generations" });
+  }
+});
+
+// GET details for a specific generation
+router.get("/pipelines/:name/versions/:id/generations/:genId", async (req: Request, res: Response) => {
+  try {
+    const { name, id, genId } = req.params;
+    
+    const generation = await getGenerationById(name, genId);
+
+    // If this is an HTMX request, render the template
+    if (req.headers['hx-request']) {
+      res.render('generation-detail', {
+        layout: false,
+        pipelineName: generation.metadata.pipelineName,
+        versionId: id,
+        ...generation
+      });
+    } else {
+      // Otherwise return JSON
+      res.json(generation);
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch generation details" });
   }
 });
 
@@ -115,78 +157,39 @@ router.post("/pipelines/:name/versions/:id/tag", async (req: Request, res: Respo
   }
 });
 
-// POST rate a generation from a pipeline version
+// POST rate a generation
 router.post("/pipelines/:name/versions/:id/generations/:genId/rate", async (req: Request, res: Response) => {
   try {
-    const { id, genId } = req.params;
+    const { genId } = req.params;
     const { rating } = req.body;
-    if (rating === undefined) {
-      return res.status(400).json({ error: "Missing rating parameter" });
+
+    const success = await rateGeneration(genId, parseInt(rating));
+    if (!success) {
+      return res.status(500).json({ error: "Failed to rate generation" });
     }
-    const success = await ratePipelineVersion(id, rating);
-    if (success) {
-      // If this is an HTMX request, refresh the version view
-      if (req.headers['hx-request']) {
-        const versions = await getAllPipelineVersions();
-        const version = versions.find(v => v.id === id);
-        if (version) {
-          res.render('pipeline-versions', {
-            layout: false,
-            pipelineName: version.pipelineName,
-            versions: [version]
-          });
-        } else {
-          res.status(404).json({ error: "Pipeline version not found" });
-        }
-      } else {
-        res.json({ message: `Generation ${genId} from pipeline version ${id} rated as ${rating}` });
-      }
-    } else {
-      res.status(404).json({ error: "Pipeline version or generation not found" });
-    }
-  } catch (error: any) {
-    if (error.message === "Rating must be between 1 and 5.") {
-      res.status(400).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: "Failed to rate generation" });
-    }
+
+    res.redirect(303, req.headers.referer || '/');
+  } catch (error) {
+    res.status(500).json({ error: "Failed to rate generation" });
   }
 });
 
-// POST mark selected generations as finetuned
+// POST mark generation for finetuning
 router.post("/pipelines/:name/versions/:id/generations/finetune", async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
     const { generationIds } = req.body;
     if (!Array.isArray(generationIds)) {
-      return res.status(400).json({ error: "Missing or invalid generationIds parameter" });
+      return res.status(400).json({ error: "Invalid generationIds parameter" });
     }
-    const success = await markPipelineVersionAsFinetuned(id);
-    if (success) {
-      // If this is an HTMX request, refresh the version view
-      if (req.headers['hx-request']) {
-        const versions = await getAllPipelineVersions();
-        const version = versions.find(v => v.id === id);
-        if (version) {
-          res.render('pipeline-versions', {
-            layout: false,
-            pipelineName: version.pipelineName,
-            versions: [version]
-          });
-        } else {
-          res.status(404).json({ error: "Pipeline version not found" });
-        }
-      } else {
-        res.json({ 
-          message: `Selected generations from pipeline version ${id} marked for finetuning`,
-          generationIds
-        });
-      }
-    } else {
-      res.status(404).json({ error: "Pipeline version not found" });
+
+    const success = await markGenerationsForFinetuning(generationIds);
+    if (!success) {
+      return res.status(500).json({ error: "Failed to mark generations for finetuning" });
     }
+
+    res.redirect(303, req.headers.referer || '/');
   } catch (error) {
-    res.status(500).json({ error: "Failed to mark generations as finetuned" });
+    res.status(500).json({ error: "Failed to mark generation for finetuning" });
   }
 });
 

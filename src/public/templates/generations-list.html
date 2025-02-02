@@ -1,0 +1,111 @@
+{{#if generations.length}}
+<script>
+  // Store pipeline name and version ID for use in event handlers
+  const pipelineName = "{{pipelineName}}";
+  const versionId = "{{versionId}}";
+</script>
+
+<div class="space-y-4">
+    {{#each generations}}
+    <div class="uk-card uk-card-hover p-4 rounded-md">
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <h3 class="text-sm font-medium">Generation {{truncate id 8}}</h3>
+                <p class="text-xs text-muted-foreground">{{formatDate metadata.input.startTime}}</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="uk-rating">
+                    {{#times 5}}
+                    <button class="uk-rating-item {{#if (lte this ../rating)}}uk-rating-item-active{{/if}}"
+                            onclick="rateGeneration('{{../id}}', {{this}})">★</button>
+                    {{/times}}
+                </div>
+                <button class="uk-btn uk-btn-sm {{#if isFinetuned}}uk-btn-primary{{else}}uk-btn-ghost{{/if}}"
+                        onclick="markForFinetuning('{{id}}')">
+                    {{#if isFinetuned}}
+                    <uk-icon icon="check" cls-custom="mr-1"></uk-icon>Finetuned
+                    {{else}}
+                    <uk-icon icon="plus" cls-custom="mr-1"></uk-icon>Mark for FT
+                    {{/if}}
+                </button>
+            </div>
+        </div>
+
+        <div class="uk-card uk-card-body bg-muted/10 rounded-md">
+            <pre class="uk-pre">{{processedOutput}}</pre>
+        </div>
+
+        <div class="flex items-center justify-between mt-3">
+            <div class="flex items-center gap-4 text-sm text-muted-foreground">
+                <div>
+                    <uk-icon icon="clock" cls-custom="mr-1"></uk-icon>
+                    {{metadata.timeTaken}}ms
+                </div>
+                <div>
+                    <uk-icon icon="dollar-sign" cls-custom="mr-1"></uk-icon>
+                    ${{metadata.generationCost}}
+                </div>
+            </div>
+            <button class="uk-btn uk-btn-ghost uk-btn-sm" onclick="showGenerationDetail('{{id}}')">
+                <uk-icon icon="maximize" cls-custom="mr-1"></uk-icon>View Details
+            </button>
+        </div>
+    </div>
+    {{/each}}
+</div>
+{{else}}
+<div class="uk-card uk-card-body text-center">
+    <p class="text-muted-foreground">No generations found for this version.</p>
+</div>
+{{/if}}
+
+<style>
+.uk-rating {
+    display: flex;
+    gap: 0.25rem;
+}
+.uk-rating-item {
+    color: var(--muted);
+    font-size: 1.25rem;
+    padding: 0 2px;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+.uk-rating-item-active {
+    color: var(--warning);
+}
+.uk-pre {
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--foreground);
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+}
+</style>
+
+<script>
+function rateGeneration(id, rating) {
+    htmx.ajax('POST', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/${id}/rate`, {
+        values: { rating },
+        swap: 'innerHTML'
+    });
+}
+
+function markForFinetuning(id) {
+    htmx.ajax('POST', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/finetune`, {
+        values: { generationIds: [id] },
+        swap: 'innerHTML'
+    });
+}
+
+function showGenerationDetail(id) {
+    htmx.ajax('GET', `/dashboard/pipelines/${pipelineName}/versions/${versionId}/generations/${id}`, {
+        target: '#content-area',
+        swap: 'innerHTML'
+    });
+}
+</script>
