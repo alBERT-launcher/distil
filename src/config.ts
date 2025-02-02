@@ -4,7 +4,7 @@ dotenv.config();
 
 export const config = {
   elastic: {
-    host: process.env.ELASTICHOST || "",
+    host: process.env.ELASTICHOST || "http://localhost:9200",
     user: process.env.ELASTICUSER || "",
     password: process.env.ELASTICPW || "",
     dataIndex: "distil_data",

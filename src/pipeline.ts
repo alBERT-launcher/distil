@@ -1,12 +1,33 @@
 // src/pipeline.ts
-import { LLMInput, GenerationResult, PipelineVersionRecord } from "./types";
+import { Client } from '@elastic/elasticsearch';
+import { 
+  PipelineVersionRecord,
+  ESSearchResponse,
+  LLMInput,
+  GenerationResult 
+} from './types';
 import { validateInput, postprocess, computeTemplateHash } from "./utils";
 import { InferenceEngine } from "./inference";
 import { Logger } from "./logger";
+import { config } from "./config";
 
-// In-memory store for pipeline version records.
-// (In a production system, swap this out with persistent storage.)
-const pipelineVersionStore: { [hash: string]: PipelineVersionRecord } = {};
+let esClient: Client;
+
+if (config.elastic.host) {
+  const clientConfig: any = {
+    node: config.elastic.host
+  };
+
+  // Only add authentication if credentials are provided
+  if (config.elastic.user && config.elastic.password) {
+    clientConfig.auth = {
+      username: config.elastic.user,
+      password: config.elastic.password
+    };
+  }
+
+  esClient = new Client(clientConfig);
+}
 
 // Types for custom functions.
 export type PreProcessingFn = (input: LLMInput) => Promise<LLMInput> | LLMInput;
@@ -87,6 +108,7 @@ export class DistilPipeline {
         }
         return result;
       };
+      const templateHash = computeTemplateHash({systemPrompt: this.systemPrompt, userPrompt: this.userPrompt, parameters, pipelineName: this.pipelineName, modelName: this.modelName});
 
       // Apply parameter substitution to prompt templates
       const systemPrompt = substituteParameters(this.systemPrompt, parameters);
@@ -106,7 +128,6 @@ export class DistilPipeline {
       validInput = await this.preprocessFn(validInput);
 
       // Compute template version hash.
-      const templateHash = computeTemplateHash(validInput);
       // Run inference.
       const { detail, rawOutput, cost } = await this.inferenceEngine.callInference({
         ...validInput,
@@ -135,48 +156,301 @@ export class DistilPipeline {
   }
 }
 
+interface PipelineAggregationBucket {
+  key: string;
+  doc_count: number;
+  latest_doc: {
+    hits: {
+      hits: Array<{
+        _id: string;
+        _source: {
+          pipelineName: string;
+          pipelineHash: string;
+          template: {
+            systemPrompt: string;
+            userPrompt: string;
+            parameterKeys?: string[];
+          };
+          tags?: string[];
+          rating?: number;
+          isFinetuned?: boolean;
+          '@timestamp'?: string;
+        };
+      }>;
+    };
+  };
+}
+
+interface PipelineSearchResponse {
+  hits: {
+    hits: Array<{
+      _id: string;
+      _source: unknown;
+    }>;
+  };
+  aggregations: {
+    unique_pipelines: {
+      buckets: PipelineAggregationBucket[];
+    };
+  };
+}
+
+interface SearchResponse<T> {
+  hits: {
+    hits: Array<{
+      _id: string;
+      _source: T;
+    }>;
+  };
+}
+
+interface PipelineAggregationResponse {
+  hits: {
+    hits: any[];
+  };
+  aggregations?: Record<string, {
+    buckets: PipelineAggregationBucket[];
+  }>;
+}
+
+function isValidHit(hit: { _source?: PipelineVersionRecord } | undefined): hit is { _source: PipelineVersionRecord } {
+  return !!hit && !!hit._source;
+}
+
+/**
+ * Get all pipeline versions.
+ */
+export async function getAllPipelineVersions(): Promise<PipelineVersionRecord[]> {
+  try {
+    // Get all indices
+    const indices = await esClient.indices.get({ index: '*' });
+    const pipelineIndices = Object.keys(indices).filter(index => !index.startsWith('.'));
+
+    if (pipelineIndices.length === 0) {
+      return [];
+    }
+    console.log("Indices:", pipelineIndices);
+
+    const pipelines: PipelineVersionRecord[] = [];
+    
+    for (const index of pipelineIndices) {
+      try {
+        const result = await esClient.search<unknown, PipelineSearchResponse>({
+          index,
+          body: {
+            size: 0,
+            aggs: {
+              unique_pipelines: {
+                terms: {
+                  field: 'pipelineHash.keyword',
+                  size: 1000
+                },
+                aggs: {
+                  latest_doc: {
+                    top_hits: {
+                      size: 1,
+                      _source: [
+                        'pipelineName',
+                        'pipelineHash',
+                        'parameterKeys',
+                        'input',
+                        'output',
+                        'template',
+                        'tags',
+                        'rating',
+                        'isFinetuned',
+                        '@timestamp'
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        const buckets = (result.aggregations as any).unique_pipelines?.buckets || [];
+        
+        for (const bucket of buckets) {
+          const hits = bucket.latest_doc.hits.hits;
+          if (hits.length === 0) continue;
+
+          const hit = hits[0];
+          const source = hit._source;
+          console.log("Hit:", hit);
+          if (source && typeof source === 'object' && 'pipelineName' in source) {
+            console.log("Source:", source);
+            const typedSource = source as {
+              pipelineName: string;
+              pipelineHash: string;
+              input: {
+                preprocessed: {
+                  systemPrompt: string;
+                  userPrompt: string;
+                  parameters?: Record<string, any>;
+                };
+              };
+              output: string;
+              tags?: string[];
+              rating?: number;
+              isFinetuned?: boolean;
+              '@timestamp'?: string;
+            };
+
+            pipelines.push({
+              id: hit._id,
+              pipelineName: typedSource.pipelineName,
+              template: {
+                systemPrompt: typedSource.input.preprocessed.systemPrompt,
+                userPrompt: typedSource.input.preprocessed.userPrompt,
+                parameterKeys: typedSource.input.preprocessed.parameters ? Object.keys(typedSource.input.preprocessed.parameters) : []
+              },
+              tags: typedSource.tags || [],
+              rating: typedSource.rating,
+              isFinetuned: typedSource.isFinetuned,
+              createdAt: typedSource['@timestamp'] || new Date().toISOString(),
+              generations: []
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error searching index ${index}:`, error);
+        // Continue with other indices even if one fails
+        continue;
+      }
+    }
+    // Sort by timestamp
+    return pipelines.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  } catch (error) {
+    console.error('Error fetching pipeline versions:', error);
+    return [];
+  }
+}
+
 /**
  * Add a tag to a pipeline version.
  */
-export function addTagToPipelineVersion(hash: string, tag: string): boolean {
-  if (pipelineVersionStore[hash]) {
-    if (!pipelineVersionStore[hash].tags.includes(tag)) {
-      pipelineVersionStore[hash].tags.push(tag);
+export async function addTagToPipelineVersion(id: string, tag: string): Promise<boolean> {
+  try {
+    // Get all indices
+    const indices = await esClient.indices.get({ index: '*' });
+    const pipelineIndices = Object.keys(indices).filter(index => !index.startsWith('.'));
+
+    if (pipelineIndices.length === 0) {
+      return false;
     }
+
+    const response = await esClient.search<PipelineVersionRecord>({
+      index: pipelineIndices.join(','),
+      body: {
+        query: {
+          ids: {
+            values: [id]
+          }
+        }
+      }
+    });
+
+    if (!response.hits?.hits || response.hits.hits.length === 0 || response.hits.hits[0]._source === undefined) {
+      return false;
+    }
+
+    const hit = response.hits.hits[0];
+    const version = hit._source!;
+    const tags = new Set([...(version.tags || []), tag]);
+    
+    await esClient.update({
+      index: hit._index,
+      id: hit._id!,
+      body: {
+        doc: {
+          tags: Array.from(tags)
+        }
+      }
+    });
+
     return true;
+  } catch (error) {
+    console.error('Error adding tag:', error);
+    return false;
   }
-  return false;
 }
 
 /**
  * Rate a pipeline version (1-5 stars).
  */
-export function ratePipelineVersion(hash: string, rating: number): boolean {
-  if (pipelineVersionStore[hash]) {
+export async function ratePipelineVersion(id: string, rating: number): Promise<boolean> {
+  try {
     if (rating < 1 || rating > 5) {
       throw new Error("Rating must be between 1 and 5.");
     }
-    pipelineVersionStore[hash].rating = rating;
+
+    const response = await esClient.search<{ _source: PipelineVersionRecord }>({
+      index: 'pipeline_versions',
+      body: {
+        query: {
+          term: { id }
+        }
+      }
+    });
+
+    if (!response.hits?.hits?.[0]) {
+      return false;
+    }
+
+    const hit = response.hits.hits[0];
+    
+    await esClient.update({
+      index: 'pipeline_versions',
+      id: hit._id!,
+      body: {
+        doc: { rating }
+      }
+    });
+
     return true;
+  } catch (error) {
+    if (error instanceof Error && error.message === "Rating must be between 1 and 5.") {
+      throw error;
+    }
+    console.error('Error rating pipeline version:', error);
+    return false;
   }
-  return false;
 }
 
 /**
  * Mark a pipeline version as finetuned.
- * (This step is automatically triggered when the user requests to export or finetune outputs.)
  */
-export function markPipelineVersionAsFinetuned(hash: string): boolean {
-  if (pipelineVersionStore[hash]) {
-    pipelineVersionStore[hash].isFinetuned = true;
-    return true;
-  }
-  return false;
-}
+export async function markPipelineVersionAsFinetuned(id: string): Promise<boolean> {
+  try {
+    const response = await esClient.search<{ _source: PipelineVersionRecord }>({
+      index: 'pipeline_versions',
+      body: {
+        query: {
+          term: { id }
+        }
+      }
+    });
 
-/**
- * Get all pipeline version records.
- */
-export function getAllPipelineVersions(): PipelineVersionRecord[] {
-  return Object.values(pipelineVersionStore);
+    if (!response.hits?.hits?.[0]) {
+      return false;
+    }
+
+    const hit = response.hits.hits[0];
+    
+    await esClient.update({
+      index: 'pipeline_versions',
+      id: hit._id!,
+      body: {
+        doc: { isFinetuned: true }
+      }
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error marking pipeline version as finetuned:', error);
+    return false;
+  }
 }

@@ -1,0 +1,25 @@
+<div class="space-y-4">
+    <h2 class="text-lg font-semibold mb-4">Pipelines</h2>
+    {{#if pipelines}}
+        {{#each pipelines}}
+        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+             hx-get="/dashboard/pipelines/{{name}}/versions"
+             hx-target="#pipeline-details"
+             hx-trigger="click">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-medium">{{name}}</h3>
+                    <p class="text-sm text-gray-500">{{versions.length}} versions</p>
+                </div>
+                <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                </svg>
+            </div>
+        </div>
+        {{/each}}
+    {{else}}
+        <div class="text-gray-500 text-center py-8">
+            No pipelines found. Start by creating a pipeline and running some generations.
+        </div>
+    {{/if}}
+</div>

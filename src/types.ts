@@ -50,7 +50,7 @@ export interface PipelineExecutionResult {
 }
 
 export interface PipelineVersionRecord {
-  id: string;
+  id: string;              // Same as templateHash
   pipelineName: string;
   template: {
     systemPrompt: string;
@@ -61,4 +61,41 @@ export interface PipelineVersionRecord {
   rating?: number;
   isFinetuned?: boolean;
   createdAt: string;
+  generations?: Array<{
+    id: string;
+    output: string;
+    timestamp: string;
+    metadata?: any;
+  }>;
+}
+
+// Elasticsearch response types
+export interface ESSearchResponse<T> {
+  hits: {
+    total: {
+      value: number;
+      relation: string;
+    };
+    hits: Array<{
+      _index: string;
+      _id: string;
+      _score: number;
+      _source: T;
+    }>;
+  };
+  aggregations?: {
+    [key: string]: {
+      buckets: Array<{
+        key: string;
+        doc_count: number;
+        latest_doc: {
+          hits: {
+            hits: Array<{
+              _source: T;
+            }>;
+          };
+        };
+      }>;
+    };
+  };
 }
