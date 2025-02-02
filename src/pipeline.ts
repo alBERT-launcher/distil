@@ -139,12 +139,17 @@ export class DistilPipeline {
       let validInput = validateInput(input);
       await this.logger.info("Input validated.");
 
-      // Run preprocessing.
+      // Store raw input before preprocessing
+      const rawInput = { ...validInput };
+
+      // Run preprocessing
       validInput = await this.preprocessFn(validInput);
+      validInput.preprocessFn = this.preprocessFn;  // Pass preprocessing function
+      validInput.postprocessFn = this.postprocessFn;  // Pass postprocessing function
 
       // Compute template version hash.
       // Run inference.
-      const { detail, rawOutput, cost } =
+      const { detail, rawOutput, processedOutput, cost } =
         await this.inferenceEngine.callInference({
           ...validInput,
           templateHash,
@@ -152,10 +157,7 @@ export class DistilPipeline {
           pipelineName: this.pipelineName,
         });
       totalCost += cost;
-      const processedOutput = await this.postprocessFn(
-        rawOutput,
-        validInput.extraData
-      );
+
       const timeTaken = (Date.now() - startTime) / 1000;
 
       return {
@@ -163,7 +165,8 @@ export class DistilPipeline {
         metadata: {
           generationCost: totalCost,
           timeTaken,
-          input: validInput,
+          rawInput,
+          preprocessedInput: validInput,
           rawOutput,
           templateHash,
         },

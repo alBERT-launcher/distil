@@ -48,9 +48,11 @@ export class InferenceEngine {
     );
 
     // Extract completion
-    const rawOutput = response.data.choices
-      .map((choice: any) => choice.message?.content || "")
-      .join("");
+    const rawOutput = response.data.choices[0].message.content;
+    const processedOutput = input.postprocessFn ? 
+      await input.postprocessFn(rawOutput, input.extraData) : 
+      rawOutput;
+
     const detail = rawOutput;
     const cost = calculateCost(JSON.stringify(messages), rawOutput);
 
@@ -69,7 +71,8 @@ export class InferenceEngine {
             parameters: input.parameters
           }
         },
-        output: rawOutput,
+        rawOutput,
+        output: JSON.stringify(processedOutput),
         cost,
         model: input.modelName,
         metadata: input.extraData
@@ -78,9 +81,13 @@ export class InferenceEngine {
 
     // Return exactly what InferenceResult expects
     return {
-      detail,
+      detail: "Success",
+      rawInput: input.originalInput,
+      preprocessedInput: input,
       rawOutput,
-      cost
+      processedOutput,
+      cost,
+      retryCount: 0 // Add retryCount to the return object
     };
   }
 }

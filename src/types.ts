@@ -20,13 +20,18 @@ export interface LLMInput {
   templateHash?: string;      // Added during pipeline processing
   originalInput?: any;        // Raw input before preprocessing
   startTime?: number;         // Execution timestamp
+  preprocessFn?: (input: LLMInput) => Promise<LLMInput> | LLMInput;  // Added preprocess function
+  postprocessFn?: (rawOutput: string, extraData?: any) => Promise<string> | string;  // Added postprocess function
 }
 
 export interface InferenceResult {
   detail: string;
-  rawOutput: string;
+  rawInput: LLMInput;         // Raw input before preprocessing
+  preprocessedInput: LLMInput; // Input after preprocessing
+  rawOutput: string;          // Raw output before postprocessing
+  processedOutput: string;    // Output after postprocessing
   cost: number;
-  retryCount?: number;      // From retry utility
+  retryCount?: number;        // From retry utility
 }
 
 export interface GenerationResult {
@@ -34,14 +39,18 @@ export interface GenerationResult {
   metadata: {
     generationCost: number;
     timeTaken: number;
-    input: LLMInput;
-    rawOutput: string;      // Added raw model output
-    templateHash: string;   // Version identifier
+    rawInput: LLMInput;       // Raw input before preprocessing
+    preprocessedInput: LLMInput; // Input after preprocessing
+    rawOutput: string;        // Raw output before postprocessing
+    templateHash: string;     // Version identifier
   };
 }
 
 export interface PipelineExecutionResult {
-  processedOutput: string;  // Final output after postprocessing
+  processedOutput: string;    // Final output after postprocessing
+  rawOutput: string;         // Raw output before postprocessing
+  rawInput: LLMInput;        // Raw input before preprocessing
+  preprocessedInput: LLMInput; // Input after preprocessing
   executionStats?: {
     averageTime: number;
     totalRuns: number;
@@ -50,7 +59,7 @@ export interface PipelineExecutionResult {
 }
 
 export interface PipelineVersionRecord {
-  id: string;              // Same as templateHash
+  id: string;                // Same as templateHash
   pipelineName: string;
   template: {
     systemPrompt: string;
@@ -63,7 +72,10 @@ export interface PipelineVersionRecord {
   createdAt: string;
   generations?: Array<{
     id: string;
-    output: string;
+    rawInput: any;           // Raw input before preprocessing
+    preprocessedInput: any;   // Input after preprocessing
+    rawOutput: string;       // Raw output before postprocessing
+    output: string;          // Processed output
     timestamp: string;
     metadata?: any;
   }>;
