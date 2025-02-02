@@ -64,11 +64,11 @@ export class InferenceEngine {
         pipelineName: input.pipelineName,
         pipelineHash: input.templateHash,
         input: {
-          raw: input.originalInput,
+          raw: JSON.stringify(input.originalInput),
           preprocessed: {
             systemPrompt: input.systemPrompt,
             userPrompt: input.userPrompt,
-            parameters: input.parameters
+            parameters: JSON.stringify(input.parameters)
           }
         },
         rawOutput,
