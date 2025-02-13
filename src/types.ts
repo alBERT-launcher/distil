@@ -43,6 +43,8 @@ export interface GenerationResult {
     preprocessedInput: LLMInput; // Input after preprocessing
     rawOutput: string;        // Raw output before postprocessing
     templateHash: string;     // Version identifier
+    pipelineName: string;     // Pipeline name
+    generationId: string;     // Generation ID
   };
 }
 

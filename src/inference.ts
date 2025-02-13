@@ -57,7 +57,7 @@ export class InferenceEngine {
     const cost = calculateCost(JSON.stringify(messages), rawOutput);
 
     // Store completion data
-    await this.esClient.index({
+    const indexResponse = await this.esClient.index({
       index: input.pipelineName.toLowerCase(), // Use pipeline name as index name
       body: {
         timestamp: new Date().toISOString(),
@@ -81,7 +81,7 @@ export class InferenceEngine {
 
     // Return exactly what InferenceResult expects
     return {
-      detail: "Success",
+      detail: indexResponse._id,
       rawInput: input.originalInput,
       preprocessedInput: input,
       rawOutput,

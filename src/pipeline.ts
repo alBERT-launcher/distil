@@ -169,6 +169,8 @@ export class DistilPipeline {
           preprocessedInput: validInput,
           rawOutput,
           templateHash,
+          pipelineName: this.pipelineName,
+          generationId: detail, // detail is now the document ID
         },
       };
     } catch (error: any) {
@@ -619,12 +621,13 @@ export async function getGenerationById(pipelineName: string, id: string) {
  * Rate a generation
  */
 export async function rateGeneration(
+  pipelineName: string,
   id: string,
   rating: number
 ): Promise<boolean> {
   try {
     await esClient.update({
-      index: config.elastic.logIndex,
+      index: pipelineName.toLowerCase(),
       id,
       doc: {
         rating: parseInt(rating.toString()),
