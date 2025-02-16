@@ -5,6 +5,7 @@ import express from "express";
 import { engine } from 'express-handlebars';
 import * as path from 'path';
 import dashboardRouter from "./api/dashboard";
+import finetuneRouter from "./api/finetune";
 import { config } from "./config";
 
 const app: express.Application = express();
@@ -41,8 +42,14 @@ app.get('/', (_req, res) => {
   res.render('index');
 });
 
+// Add finetune page route
+app.get('/finetune', (_req, res) => {
+  res.render('layouts/finetune');
+});
+
 // API routes
 app.use("/dashboard", dashboardRouter);
+app.use("/api/finetune", finetuneRouter);
 
 // Start the dashboard server
 const port = config.dashboard.port;

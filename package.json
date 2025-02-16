@@ -7,7 +7,9 @@
     "scripts": {
         "build": "chmod +x build.sh && ./build.sh",
         "start": "node dist/index.js",
-        "dev": "ts-node-dev src/index.ts"
+        "dev": "ts-node-dev --respawn src/index.ts",
+        "serve": "npm run build && npm run start",
+        "serve:dev": "NODE_ENV=development npm run dev"
     },
     "repository": {
         "type": "git",
@@ -33,7 +35,8 @@
         "axios": "^1.4.0",
         "dotenv": "^16.0.3",
         "express": "^4.18.2",
-        "express-handlebars": "^8.0.1"
+        "express-handlebars": "^8.0.1",
+        "openai": "^4.85.1"
     },
     "devDependencies": {
         "@types/express": "^4.17.17",

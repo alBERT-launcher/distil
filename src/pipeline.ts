@@ -198,7 +198,17 @@ interface PipelineAggregationBucket {
           tags?: string[];
           rating?: number;
           isFinetuned?: boolean;
-          "@timestamp"?: string;
+          timestamp?: string;
+        };
+      }>;
+    };
+  };
+  first_generation: {
+    hits: {
+      hits: Array<{
+        _id: string;
+        _source: {
+          timestamp?: string;
         };
       }>;
     };
@@ -259,7 +269,7 @@ interface GenerationDocument {
   generationCost?: number;
   rating?: number;
   isFinetuned?: boolean;
-  "@timestamp"?: string;
+  timestamp?: string;
 }
 
 interface ESSearchHit {
@@ -319,13 +329,18 @@ export async function getAllPipelineVersions(): Promise<
                         "pipelineHash",
                         "parameterKeys",
                         "input",
-                        "output",
                         "template",
                         "tags",
                         "rating",
                         "isFinetuned",
-                        "@timestamp",
+                        "timestamp",
                       ],
+                    },
+                  },
+                  first_generation: {
+                    top_hits: {
+                      size: 1,
+                      sort: [{ timestamp: "asc" }],
                     },
                   },
                 },
@@ -364,11 +379,14 @@ export async function getAllPipelineVersions(): Promise<
               tags?: string[];
               rating?: number;
               isFinetuned?: boolean;
-              "@timestamp"?: string;
+              timestamp?: string;
             };
 
+            const firstGeneration = bucket.first_generation?.hits.hits[0];
+            const firstGenerationDate = firstGeneration?._source?.timestamp;
+
             pipelines.push({
-              id: typedSource.pipelineHash,
+              id: bucket.key,
               pipelineName: typedSource.pipelineName,
               template: {
                 systemPrompt: typedSource.input.preprocessed.systemPrompt,
@@ -380,7 +398,7 @@ export async function getAllPipelineVersions(): Promise<
               tags: typedSource.tags || [],
               rating: typedSource.rating,
               isFinetuned: typedSource.isFinetuned,
-              createdAt: typedSource["@timestamp"] || new Date().toISOString(),
+              createdAt: firstGenerationDate || typedSource.timestamp || new Date().toISOString(),
               generations: [],
             });
           }

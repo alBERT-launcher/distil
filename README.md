@@ -11,6 +11,7 @@
 - [Dashboard](#dashboard)
 - [Configuration & Environment Variables](#configuration--environment-variables)
 - [Getting Started](#getting-started)
+- [Running the Server](#running-the-server)
 - [Quick Example](#quick-example)
 - [Rating and Fine-tuning](#rating-and-fine-tuning)
 - [Advanced Features](#advanced-features)
@@ -116,6 +117,65 @@ npm install @lewist9x/distil
 ```
 
 Then, configure your environment and start building pipelines.
+
+---
+
+## Running the Server
+
+Distil includes a built-in dashboard server that you can run either as a standalone application or integrate into your existing Express app.
+
+### Running as a Standalone Server
+
+1. First, copy the example environment file and configure your settings:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Update the `.env` file with your configuration:
+   - Set `ELASTICHOST` for your Elasticsearch instance
+   - Configure `OPENAI_API_KEY` for finetuning capabilities
+   - Set `DASHBOARD_PORT` (default: 3000)
+
+3. Choose how to run the server:
+
+   **Development Mode (with hot-reload):**
+   ```bash
+   npm run serve:dev
+   ```
+
+   **Production Mode:**
+   ```bash
+   npm run serve
+   ```
+
+The server will start and display:
+- The dashboard URL (default: http://localhost:3000)
+- The current environment
+- Server status
+
+### Features Available in the Dashboard
+
+- View all pipeline versions and their performance
+- Rate and tag generations for quality control
+- Select and prepare data for finetuning
+- Monitor costs and usage metrics
+- Analyze prompt effectiveness
+
+### Integrating with Existing Express App
+
+If you want to integrate the dashboard into your existing Express application, you can import and use the app:
+
+```typescript
+import app from '@lewist9x/distil';
+import { config } from '@lewist9x/distil/config';
+
+// Use as middleware
+const dashboardApp = app;
+yourApp.use('/distil', dashboardApp);
+
+// Or mount at a specific path
+app.listen(config.dashboard.port);
+```
 
 ---
 
@@ -416,5 +476,3 @@ We welcome contributions to improve Distil! If you have ideas, bug fixes, or imp
 ## License
 
 Distil is released under the [MIT License](LICENSE).
-
-
