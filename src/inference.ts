@@ -19,10 +19,17 @@ export class InferenceEngine {
   }
 
   async callInference(input: LLMInput): Promise<InferenceResult> {
-    // Construct messages array
+    // Determine if using finetuned model
+    const isFineTuned = input.parameters?.useFinetuned === true;
+    
+    // Construct messages array with appropriate system message
+    const systemMessage = isFineTuned ? 
+      `You are an AI assistant trained to help with ${input.pipelineName.toLowerCase()} tasks.` :
+      input.systemPrompt;
+
     const messages = [
-      { role: "system", content: input.systemPrompt },
-      { role: "user", content: input.userPrompt }
+      { role: "system", content: systemMessage },
+      { role: "user", content: isFineTuned ? input.originalInput : input.userPrompt }
     ];
 
     // Prepare API request with all relevant parameters
@@ -34,14 +41,25 @@ export class InferenceEngine {
       ...(input.parameters || {}) // Include any custom parameters
     };
 
+    // Choose API endpoint based on whether using finetuned model
+    const apiConfig = isFineTuned ? {
+      baseUrl: config.openai.baseUrl,
+      endpoint: config.openai.finetune.endpoint,
+      apiKey: config.openai.apiKey
+    } : {
+      baseUrl: config.openLLM.baseUrl,
+      endpoint: "/chat/completions",
+      apiKey: config.openLLM.apiKey
+    };
+
     const response = await retry(() =>
       axios.post(
-        `${config.openLLM.baseUrl}/chat/completions`,
+        `${apiConfig.baseUrl}${apiConfig.endpoint}`,
         requestBody,
         {
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${config.openLLM.apiKey}`
+            Authorization: `Bearer ${apiConfig.apiKey}`
           }
         }
       )
@@ -49,16 +67,15 @@ export class InferenceEngine {
 
     // Extract completion
     const rawOutput = response.data.choices[0].message.content;
-    const processedOutput = input.postprocessFn ? 
-      await input.postprocessFn(rawOutput, input.extraData) : 
-      rawOutput;
+    const processedOutput = isFineTuned ? 
+      rawOutput : // If finetuned, skip post-processing
+      (input.postprocessFn ? await input.postprocessFn(rawOutput, input.extraData) : rawOutput);
 
-    const detail = rawOutput;
     const cost = calculateCost(JSON.stringify(messages), rawOutput);
 
     // Store completion data
     const indexResponse = await this.esClient.index({
-      index: input.pipelineName.toLowerCase(), // Use pipeline name as index name
+      index: input.pipelineName.toLowerCase(),
       body: {
         timestamp: new Date().toISOString(),
         pipelineName: input.pipelineName,
@@ -66,8 +83,8 @@ export class InferenceEngine {
         input: {
           raw: JSON.stringify(input.originalInput),
           preprocessed: {
-            systemPrompt: input.systemPrompt,
-            userPrompt: input.userPrompt,
+            systemPrompt: systemMessage,
+            userPrompt: isFineTuned ? input.originalInput : input.userPrompt,
             parameters: JSON.stringify(input.parameters)
           }
         },
@@ -75,7 +92,8 @@ export class InferenceEngine {
         output: JSON.stringify(processedOutput),
         cost,
         model: input.modelName,
-        metadata: input.extraData
+        metadata: input.extraData,
+        isFineTuned
       }
     });
 
@@ -87,7 +105,7 @@ export class InferenceEngine {
       rawOutput,
       processedOutput,
       cost,
-      retryCount: 0 // Add retryCount to the return object
+      retryCount: 0
     };
   }
 }

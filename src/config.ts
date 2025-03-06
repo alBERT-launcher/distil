@@ -15,7 +15,12 @@ export const config = {
     baseUrl: process.env.OPENLLM_BASE_URL || "https://openrouter.ai/api/v1"
   },
   openai: {
-    apiKey: process.env.OPENAI_API_KEY || ""
+    apiKey: process.env.OPENAI_API_KEY || "",
+    baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+    finetune: {
+      enabled: process.env.USE_FINETUNE === "true" || false,
+      endpoint: "/chat/completions"
+    }
   },
   costPerToken: 4.5 / 10000000,
   retry: {
