@@ -47,9 +47,17 @@ export class InferenceEngine {
       `You are an AI assistant trained to help with ${input.pipelineName.toLowerCase()} tasks.` :
       input.systemPrompt;
 
+    delete input.parameters?.useFinetuned;
+
+    const promptFinetuned = input.parameters;
+
+    delete promptFinetuned?.temperature;
+    delete promptFinetuned?.top_p;
+    delete promptFinetuned?.max_tokens;
+
     const messages: ChatCompletionMessageParam[] = [
       { role: "system", content: systemMessage },
-      { role: "user", content: isFineTuned ? JSON.stringify(input.parameters) : input.userPrompt }
+      { role: "user", content: isFineTuned ? JSON.stringify(promptFinetuned) : input.userPrompt }
     ];
 
     // Prepare API request with all relevant parameters
@@ -57,9 +65,8 @@ export class InferenceEngine {
       model: input.modelName,
       messages,
       max_tokens: 4000,
-      temperature: 1,
+      temperature: 0.5,
       stream: false,
-      // ...(input.parameters || {}) // Include any custom parameters
     };
 
     await this.logger.debug("Request params:" + JSON.stringify(requestParams));
@@ -73,7 +80,7 @@ export class InferenceEngine {
       // Extract completion
       const rawOutput = completion.choices[0].message.content || "";
       const processedOutput = isFineTuned ? 
-        rawOutput : // If finetuned, skip post-processing
+        JSON.parse(rawOutput) : // If finetuned, skip post-processing
         (input.postprocessFn ? await input.postprocessFn(rawOutput, input.extraData) : rawOutput);
       
       await this.logger.debug("Processed output:" + processedOutput);
