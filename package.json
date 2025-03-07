@@ -1,11 +1,11 @@
 {
     "name": "@lewist9x/distil",
-    "version": "1.0.2",
+    "version": "1.0.27",
     "description": "An opinionated library for managing LLM pipelines. Define, track, rate, and curate prompt–completion pairs for fine-tuning.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
-        "build": "chmod +x build.sh && ./build.sh",
+        "build": "tsc",
         "start": "node dist/index.js",
         "dev": "ts-node-dev --respawn src/index.ts",
         "serve": "npm run build && npm run start",

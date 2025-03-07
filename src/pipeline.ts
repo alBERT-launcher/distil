@@ -91,13 +91,17 @@ export class DistilPipeline {
         ...inputData, // First, take all fields from inputData
         modelName: this.modelName,
       };
+      await this.logger.info("Input:" + JSON.stringify(input));
+      await this.logger.info("Input:" + JSON.stringify(input));
+      await this.logger.info("Input:" + JSON.stringify(input));
+      await this.logger.info("Input:" + JSON.stringify(input));
 
       // Merge default parameters first
       const parameters = {
         ...(this.defaultParameters || {}),
         ...(inputData || {}),
       };
-
+      await this.logger.info("Parameters:" + JSON.stringify(parameters));
       // Helper function to substitute parameters in template strings
       const substituteParameters = (
         template: string,
@@ -125,17 +129,17 @@ export class DistilPipeline {
         pipelineName: this.pipelineName,
         modelName: this.modelName,
       });
-
+      await this.logger.info("Template hash:" + templateHash);
       // Apply parameter substitution to prompt templates
       const systemPrompt = substituteParameters(this.systemPrompt, parameters);
       const userPrompt = substituteParameters(this.userPrompt, parameters);
-
+      await this.logger.info("System prompt:" + systemPrompt);
       // Add processed prompts to input
       input.systemPrompt = systemPrompt;
       input.userPrompt = userPrompt;
       input.parameters = parameters;
 
-      this.logger.info("Validating input..." + JSON.stringify(input));
+      await this.logger.info("Validating input..." + JSON.stringify(input));
       let validInput = validateInput(input);
       await this.logger.info("Input validated.");
 
@@ -147,6 +151,7 @@ export class DistilPipeline {
       validInput.preprocessFn = this.preprocessFn;  // Pass preprocessing function
       validInput.postprocessFn = this.postprocessFn;  // Pass postprocessing function
 
+      await this.logger.info("Valid input:" + JSON.stringify(validInput));
       // Compute template version hash.
       // Run inference.
       const { detail, rawOutput, processedOutput, cost } =
@@ -157,6 +162,7 @@ export class DistilPipeline {
           pipelineName: this.pipelineName,
         });
       totalCost += cost;
+      await this.logger.info("Processed output:" + processedOutput);
 
       const timeTaken = (Date.now() - startTime) / 1000;
 
@@ -174,7 +180,7 @@ export class DistilPipeline {
         },
       };
     } catch (error: any) {
-      await this.logger.error("Generation error: " + error.message);
+      await this.logger.error("Generation error: " + JSON.stringify(error));
       return null;
     }
   }
@@ -304,7 +310,6 @@ export async function getAllPipelineVersions(): Promise<
     if (pipelineIndices.length === 0) {
       return [];
     }
-    console.log("Indices:", pipelineIndices);
 
     const pipelines: PipelineVersionRecord[] = [];
 
@@ -358,13 +363,11 @@ export async function getAllPipelineVersions(): Promise<
 
           const hit = hits[0];
           const source = hit._source;
-          console.log("Hit:", hit);
           if (
             source &&
             typeof source === "object" &&
             "pipelineName" in source
           ) {
-            console.log("Source:", source);
             const typedSource = source as {
               pipelineName: string;
               pipelineHash: string;
@@ -581,7 +584,6 @@ export async function getGenerationsForVersion(
       size: 50,
     });
 
-    console.log({ response });
     return (response.hits.hits as ESSearchHit[]).map((hit) => {
       const source = hit._source;
       return {
