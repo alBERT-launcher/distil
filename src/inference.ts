@@ -29,12 +29,20 @@ export class InferenceEngine {
     // Initialize OpenAI clients
     this.openaiClient = new OpenAI({
       apiKey: config.openai.apiKey,
-      baseURL: config.openai.baseUrl
+      baseURL: config.openai.baseUrl,
+      defaultHeaders: {
+        'HTTP-Referer': 'https://www.theclarityproject.net/',
+        'X-Title': 'Unbrowse Agentic Launcher'
+      }
     });
     
     this.openLLMClient = new OpenAI({
       apiKey: config.openLLM.apiKey,
-      baseURL: config.openLLM.baseUrl
+      baseURL: config.openLLM.baseUrl,
+      defaultHeaders: {
+        'HTTP-Referer': 'https://www.theclarityproject.net/',
+        'X-Title': 'Unbrowse Agentic Launcher'
+      }
     });
   }
 
