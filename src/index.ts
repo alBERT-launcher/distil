@@ -19,9 +19,9 @@ app.engine('html', engine({
     truncate: (str: string, len: number) => str.substring(0, len),
     formatDate: (date: string) => new Date(date).toLocaleString(),
     json: (obj: any) => JSON.stringify(obj, null, 2),
-    times: function(n: number, block: any) {
+    times: function (n: number, block: any) {
       let accum = '';
-      for(let i = 1; i <= n; ++i)
+      for (let i = 1; i <= n; ++i)
         accum += block.fn(i);
       return accum;
     },
@@ -52,9 +52,13 @@ app.use("/dashboard", dashboardRouter);
 
 // Start the dashboard server
 const port = config.dashboard.port;
-app.listen(port, () => {
-  console.log(`Dashboard server is running on port ${port}`);
-  console.log(`View the dashboard at http://localhost:${port}`);
-});
+// disable with RUN_DASHBOARD false
+if (process.env.RUN_DASHBOARD !== "false") {
+  console.log("Starting dashboard server...");
+  app.listen(port, () => {
+    console.log(`Dashboard server is running on port ${port}`);
+    console.log(`View the dashboard at http://localhost:${port}`);
+  });
+}
 
 export default app;
